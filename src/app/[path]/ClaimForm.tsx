@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 type Props = { code: string };
 type CheckResp = { ok: boolean; available: boolean };
-
 type ExtraItem = { type: string; value: string };
 
 const EXTRA_OPTIONS = [
@@ -19,7 +19,8 @@ const EXTRA_OPTIONS = [
 
 const MAX_EXTRAS = 3;
 
-// Helpers
+/* -------------------- Helpers -------------------- */
+
 const debounce = <T extends unknown[]>(fn: (...args: T) => void, ms = 300) => {
   let t: ReturnType<typeof setTimeout> | undefined;
   return (...args: T) => {
@@ -38,20 +39,18 @@ const capitalizeWords = (s: string) => {
   );
 };
 
-// Slug con guiones entre palabras (nombre + apellido)
 const generateSlug = (first: string, last: string) => {
   const full = `${normalizeSpaces(first)} ${normalizeSpaces(last)}`.trim();
   return full
     .toLocaleLowerCase("es-ES")
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // quitar tildes
-    .replace(/[^\p{L}\p{N}\s-]+/gu, "") // quitar símbolos raros
-    .replace(/\s+/g, "-") // espacios -> guion
-    .replace(/-+/g, "-") // colapsar guiones
-    .replace(/^-|-$/g, ""); // bordes
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s-]+/gu, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
 };
 
-// Evitar duplicados en extras
 const usedTypes = (extras: ExtraItem[], exceptIndex?: number) =>
   new Set(
     extras
@@ -63,14 +62,20 @@ const availableTypes = (extras: ExtraItem[], exceptIndex?: number) =>
     (k) => !usedTypes(extras, exceptIndex).has(k)
   );
 
+/* -------------------- Componente -------------------- */
+
 export default function ClaimForm({ code }: Props) {
   const router = useRouter();
 
-  // Campos base
+  // Base
   const [name, setName] = useState("");
   const [last, setLast] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState("");
+
+  // Mini bio
+  const [miniBio, setMiniBio] = useState("");
+  const bioCount = miniBio.length;
 
   // Slug
   const [slug, setSlug] = useState("");
@@ -82,17 +87,21 @@ export default function ClaimForm({ code }: Props) {
   const [extras, setExtras] = useState<ExtraItem[]>([]);
   const [extraErrors, setExtraErrors] = useState<boolean[]>([]);
 
+  // Foto/archivo (avatar)
+  const [fileAvatar, setFileAvatar] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+
   // Estado general
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Autogenerar slug (con guiones) mientras no se haya tocado manualmente
+  // Autogenerar slug
   useEffect(() => {
     if (slugTouched) return;
     setSlug(generateSlug(name, last));
   }, [name, last, slugTouched]);
 
-  // Chequeo en vivo del slug
+  // Chequeo de slug
   const runCheck = useMemo(
     () =>
       debounce(async (value: string) => {
@@ -155,6 +164,32 @@ export default function ClaimForm({ code }: Props) {
     setExtraErrors((arr) => arr.filter((_, i) => i !== idx));
   };
 
+  // Manejo de archivo avatar (subir o tomar foto)
+  const handleAvatarFile = (f: File | null) => {
+    setFileAvatar(f);
+    if (f) {
+      const url = URL.createObjectURL(f);
+      setAvatarPreview(url);
+    } else {
+      setAvatarPreview(null);
+    }
+  };
+
+  // Subir avatar a Supabase y devolver URL pública
+  const uploadAvatarIfAny = async (f: File | null, slugForPath: string) => {
+    if (!f) return null;
+    const path = `${slugForPath}/avatar-${Date.now()}-${f.name.replace(
+      /\s+/g,
+      "-"
+    )}`;
+    const { error: upErr } = await supabase.storage
+      .from("profiles")
+      .upload(path, f, { upsert: true });
+    if (upErr) throw upErr;
+    const { data } = supabase.storage.from("profiles").getPublicUrl(path);
+    return data.publicUrl || null;
+  };
+
   // Submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,8 +204,6 @@ export default function ClaimForm({ code }: Props) {
       setError("Ese slug ya está ocupado.");
       return;
     }
-
-    // Validar extras: ninguno vacío
     if (extras.length > 0) {
       const errs = extras.map((ex) => !ex.value.trim());
       setExtraErrors(errs);
@@ -179,32 +212,60 @@ export default function ClaimForm({ code }: Props) {
         return;
       }
     }
+    if (miniBio.length > 250) {
+      setError("La mini‑biografía no puede superar 250 caracteres.");
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const body = {
-        code,
-        name: capitalizeWords(name),
-        last_name: capitalizeWords(last),
-        whatsapp: whatsapp.replace(/\D/g, ""),
-        email,
-        slug: s,
-        template_config: { extra: extras },
-      };
-
+      // 1) Claim -> crea perfil
       const res = await fetch("/api/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          code,
+          name: capitalizeWords(name),
+          last_name: capitalizeWords(last),
+          whatsapp: whatsapp.replace(/\D/g, ""),
+          email,
+          mini_bio: miniBio,
+          slug: s,
+          template_config: { extra: extras },
+        }),
       });
 
-      const json = await res.json();
-      if (!res.ok || !json.ok)
-        throw new Error(json.error || "No se pudo reclamar el código.");
+      // Manejo robusto de respuesta
+      let payload: any = null;
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        payload = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(text || "Respuesta no‑JSON del servidor.");
+      }
+      if (!res.ok || !payload?.ok) {
+        throw new Error(payload?.error || "No se pudo reclamar el código.");
+      }
 
-      router.push(`/${json.slug}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error inesperado.");
+      const finalSlug = payload.slug as string;
+
+      // 2) Si hay avatar, subirlo y actualizar template_config
+      if (fileAvatar) {
+        const avatar_url = await uploadAvatarIfAny(fileAvatar, finalSlug);
+        if (avatar_url) {
+          await fetch("/api/profile/update-media", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ slug: finalSlug, avatar_url }),
+          });
+        }
+      }
+
+      // 3) Redirigir
+      router.push(`/${finalSlug}`);
+    } catch (err: any) {
+      setError(err?.message || "Error inesperado.");
     } finally {
       setSubmitting(false);
     }
@@ -267,6 +328,22 @@ export default function ClaimForm({ code }: Props) {
           />
         </label>
 
+        {/* Mini‑biografía */}
+        <label className="flex flex-col gap-1">
+          <span>Mini‑biografía (máx. 250)</span>
+          <textarea
+            className="border rounded-md p-2"
+            rows={3}
+            maxLength={250}
+            value={miniBio}
+            onChange={(e) => setMiniBio(e.target.value.slice(0, 250))}
+            placeholder="Escribe una breve descripción (máx. 250 caracteres)"
+          />
+          <span className="text-xs text-gray-500">
+            {bioCount}/250 caracteres
+          </span>
+        </label>
+
         {/* Slug */}
         <label className="flex flex-col gap-1">
           <span>Slug (tu URL pública)</span>
@@ -290,7 +367,7 @@ export default function ClaimForm({ code }: Props) {
           </span>
         </label>
 
-        {/* Otros datos (arriba del botón) */}
+        {/* Extras (arriba del botón) */}
         <div className="mt-2 flex flex-col gap-2">
           {extras.map((it, i) => (
             <div key={i} className="flex items-center gap-2">
@@ -358,6 +435,50 @@ export default function ClaimForm({ code }: Props) {
             Agregar otros datos
           </button>
         </div>
+
+        {/* -------- Botones de imagen (mismo renglón) -------- */}
+        <div className="flex gap-3 items-center mt-2">
+          {/* Subir desde dispositivo */}
+          <label className="flex-1 text-center px-4 py-2 border rounded-md cursor-pointer hover:bg-gray-50">
+            Subir imagen
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => handleAvatarFile(e.target.files?.[0] || null)}
+            />
+          </label>
+
+          {/* Tomar foto (móvil abre cámara) */}
+          <label className="flex-1 text-center px-4 py-2 border rounded-md cursor-pointer hover:bg-gray-50">
+            Tomar foto
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => handleAvatarFile(e.target.files?.[0] || null)}
+            />
+          </label>
+        </div>
+
+        {/* Preview y opción limpiar */}
+        {avatarPreview && (
+          <div className="flex items-center gap-3">
+            <img
+              src={avatarPreview}
+              alt="preview"
+              className="w-14 h-14 rounded-full object-cover border"
+            />
+            <button
+              type="button"
+              onClick={() => handleAvatarFile(null)}
+              className="text-sm underline"
+            >
+              Quitar imagen
+            </button>
+          </div>
+        )}
 
         {error && <div className="text-red-600 text-sm">{error}</div>}
 

@@ -1,70 +1,99 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/server";
+import { admin } from "@/lib/supabaseAdmin";
 
-export async function POST(req: Request) {
-  const body = await req.json();
-  const { code, name, last_name, whatsapp, email, slug, template_config } =
-    body;
-
-  if (!code || !name || !last_name || !slug) {
-    return NextResponse.json(
-      { ok: false, error: "Missing fields" },
-      { status: 400 }
-    );
-  }
-
-  const admin = supabaseAdmin();
-
-  // 1) Verifica que el code existe y está unclaimed
-  const { data: sc, error: e1 } = await admin
-    .from("short_codes")
-    .select("*")
-    .eq("code", code)
-    .maybeSingle();
-
-  if (e1 || !sc || sc.status !== "unclaimed") {
-    return NextResponse.json(
-      { ok: false, error: "Code invalid or claimed" },
-      { status: 400 }
-    );
-  }
-
-  // 2) Verifica slug libre
-  const { data: existing } = await admin
-    .from("profiles")
-    .select("id")
-    .eq("slug", slug)
-    .maybeSingle();
-  if (existing) {
-    return NextResponse.json(
-      { ok: false, error: "Slug taken" },
-      { status: 409 }
-    );
-  }
-
-  // 3) Crea profile
-  // 3) Crea profile
-  const { error: e2 } = await admin.from("profiles").insert({
-    name,
-    last_name,
-    whatsapp,
-    email,
-    slug,
-    template_key: "TemplateLinkBio",
-    template_config: template_config || {}, // <<<<< guarda extras aquí
+// Helper para responder JSON siempre
+const j = (body: any, status = 200) =>
+  new NextResponse(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
   });
 
-  if (e2)
-    return NextResponse.json({ ok: false, error: e2.message }, { status: 500 });
+export async function POST(req: Request) {
+  try {
+    // 1) Parseo de body
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return j({ ok: false, error: "Body inválido (no es JSON)." }, 400);
+    }
 
-  // 4) Actualiza short_code
-  const { error: e3 } = await admin
-    .from("short_codes")
-    .update({ status: "claimed", slug, claimed_at: new Date().toISOString() })
-    .eq("code", code);
+    const {
+      code,
+      name,
+      last_name,
+      whatsapp,
+      email,
+      mini_bio,
+      slug,
+      template_config,
+    } = body || {};
 
-  if (e3)
-    return NextResponse.json({ ok: false, error: e3.message }, { status: 500 });
+    // 2) Validaciones mínimas
+    if (!code || !name || !last_name || !slug) {
+      return j({ ok: false, error: "Faltan campos requeridos." }, 400);
+    }
 
-  return NextResponse.json({ ok: true, slug });
+    // 3) Slug disponible
+    {
+      const { data: existing, error } = await admin
+        .from("profiles")
+        .select("id")
+        .eq("slug", slug)
+        .maybeSingle();
+      if (error) return j({ ok: false, error: "Error verificando slug." }, 500);
+      if (existing)
+        return j({ ok: false, error: "El slug ya está ocupado." }, 400);
+    }
+
+    // 4) Code existe y está unclaimed
+    const { data: sc, error: scErr } = await admin
+      .from("short_codes")
+      .select("code,status")
+      .eq("code", code)
+      .maybeSingle();
+
+    if (scErr) return j({ ok: false, error: "Error buscando el código." }, 500);
+    if (!sc) return j({ ok: false, error: "Código no existe." }, 404);
+    if (sc.status !== "unclaimed") {
+      return j({ ok: false, error: "Este código ya fue reclamado." }, 409);
+    }
+
+    // 5) Crear perfil
+    const { data: profile, error: insErr } = await admin
+      .from("profiles")
+      .insert({
+        name,
+        last_name,
+        whatsapp: whatsapp ?? null,
+        email: email ?? null,
+        mini_bio: mini_bio ?? null,
+        slug,
+        template_key: "TemplateLinkBio",
+        template_config: template_config ?? {},
+      })
+      .select("id")
+      .single();
+
+    if (insErr || !profile) {
+      return j({ ok: false, error: "Error guardando perfil." }, 500);
+    }
+
+    // 6) Marcar el code como reclamado y enlazar slug
+    const { error: updErr } = await admin
+      .from("short_codes")
+      .update({ status: "claimed", slug })
+      .eq("code", code);
+
+    if (updErr) {
+      // rollback simple: borrar perfil creado si falla la actualización del code
+      await admin.from("profiles").delete().eq("id", profile.id);
+      return j({ ok: false, error: "Error actualizando el código." }, 500);
+    }
+
+    return j({ ok: true, slug }, 200);
+  } catch (err: any) {
+    // Nunca devolvemos HTML
+    return j({ ok: false, error: err?.message || "Error inesperado." }, 500);
+  }
 }
