@@ -3,7 +3,8 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const { code, name, last_name, whatsapp, email, instagram, slug } = body;
+  const { code, name, last_name, whatsapp, email, slug, template_config } =
+    body;
 
   if (!code || !name || !last_name || !slug) {
     return NextResponse.json(
@@ -48,10 +49,9 @@ export async function POST(req: Request) {
     last_name,
     whatsapp,
     email,
-    instagram,
     slug,
     template_key: "TemplateLinkBio",
-    template_config: {},
+    template_config: template_config || {}, // <<<<< guarda extras aquí
   });
 
   if (e2)

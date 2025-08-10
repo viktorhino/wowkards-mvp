@@ -5,7 +5,6 @@ type Profile = {
   last_name: string;
   whatsapp?: string | null;
   email?: string | null;
-  instagram?: string | null;
   template_config?: {
     links?: LinkItem[];
   } | null;
@@ -13,24 +12,23 @@ type Profile = {
 
 export default function TemplateLinkBio({ profile }: { profile: Profile }) {
   const cfg = profile?.template_config ?? {};
-  const links: LinkItem[] = cfg.links ?? [
-    {
-      label: "WhatsApp",
-      href: profile?.whatsapp
-        ? `https://wa.me/${String(profile.whatsapp).replace(/\D/g, "")}`
-        : "#",
-    },
-    {
-      label: "Instagram",
-      href: profile?.instagram
-        ? `https://instagram.com/${profile.instagram}`
-        : "#",
-    },
-    {
-      label: "Email",
-      href: profile?.email ? `mailto:${profile.email}` : "#",
-    },
-  ];
+  const links: LinkItem[] =
+    cfg.links ??
+    ([
+      profile?.whatsapp
+        ? {
+            label: "WhatsApp",
+            href: `https://wa.me/${String(profile.whatsapp).replace(
+              /\D/g,
+              ""
+            )}`,
+          }
+        : null,
+
+      profile?.email
+        ? { label: "Email", href: `mailto:${profile.email}` }
+        : null,
+    ].filter(Boolean) as LinkItem[]);
 
   return (
     <main className="min-h-screen flex flex-col items-center p-8 gap-4">
