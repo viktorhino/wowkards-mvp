@@ -211,7 +211,7 @@ export default function TemplateLinkBio({ profile }: { profile: Profile }) {
   const CTA_FREE = process.env.NEXT_PUBLIC_CTA_FREE_PATH || "/claim/free";
 
   return (
-    <div className="w-full flex justify-center min-h-screen bg-neutral-50">
+    <div className="w-full flex justify-center min-h-screen ">
       <div
         className={cx(
           "relative w-[360px] max-w-full rounded-[28px] overflow-hidden shadow-xl",
