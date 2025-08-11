@@ -239,6 +239,10 @@ export default function ClaimForm({ code }: Props) {
           mini_bio: miniBio,
           slug: s,
           template_config: { extra: extras },
+          template_config: {
+            layout: "cardA",
+            brand: { primary: "#0A66FF", accent: "#4FB0FF" },
+          },
         }),
       });
 

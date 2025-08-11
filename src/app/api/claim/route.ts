@@ -1,90 +1,114 @@
 import { NextResponse } from "next/server";
-import { admin } from "@/lib/supabaseAdmin";
-
-const j = (body: any, status = 200) =>
-  new NextResponse(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-  });
+import { supabaseAdmin } from "@/lib/supabase/server";
+import { normalizeWhatsapp } from "@/lib/phone";
 
 export async function POST(req: Request) {
   try {
-    let body: any;
-    try {
-      body = await req.json();
-    } catch {
-      return j({ ok: false, error: "Body inválido (no es JSON)." }, 400);
-    }
+    const body = await req.json();
 
+    // Campos esperados desde el cliente
     const {
       code,
       name,
       last_name,
-      whatsapp,
-      email,
-      mini_bio,
+      whatsapp, // puede venir e164, pero igual lo revalidamos aquí
+      email, // ya viene en minúsculas desde el form
       slug,
-      template_config,
+      template_config, // opcional
     } = body || {};
 
+    // Validación básica
     if (!code || !name || !last_name || !slug) {
-      return j({ ok: false, error: "Faltan campos requeridos." }, 400);
+      return NextResponse.json(
+        { ok: false, error: "Missing fields" },
+        { status: 400 }
+      );
     }
 
-    // Slug libre
-    {
-      const { data: existing, error } = await admin
-        .from("profiles")
-        .select("id")
-        .eq("slug", slug)
-        .maybeSingle();
-      if (error) return j({ ok: false, error: "Error verificando slug." }, 500);
-      if (existing)
-        return j({ ok: false, error: "El slug ya está ocupado." }, 400);
+    // Normaliza y valida WhatsApp en servidor (fuente de verdad)
+    const { e164: waE164, valid } = normalizeWhatsapp(String(whatsapp || ""));
+    if (!valid) {
+      return NextResponse.json(
+        { ok: false, error: "WhatsApp inválido" },
+        { status: 400 }
+      );
     }
 
-    // Code unclaimed
-    const { data: sc, error: scErr } = await admin
+    const admin = supabaseAdmin();
+
+    // 1) Verifica que el code existe y está unclaimed
+    const { data: sc, error: e1 } = await admin
       .from("short_codes")
-      .select("code,status")
+      .select("*")
       .eq("code", code)
       .maybeSingle();
-    if (scErr) return j({ ok: false, error: "Error buscando el código." }, 500);
-    if (!sc) return j({ ok: false, error: "Código no existe." }, 404);
-    if (sc.status !== "unclaimed")
-      return j({ ok: false, error: "Este código ya fue reclamado." }, 409);
 
-    // Crear perfil (pedimos edit_token en la selección)
-    const { data: profile, error: insErr } = await admin
-      .from("profiles")
-      .insert({
-        name,
-        last_name,
-        whatsapp: whatsapp ?? null,
-        email: email ?? null,
-        mini_bio: mini_bio ?? null,
-        slug,
-        template_key: "TemplateLinkBio",
-        template_config: template_config ?? {},
-      })
-      .select("id, slug, edit_token")
-      .single();
-
-    if (insErr || !profile)
-      return j({ ok: false, error: "Error guardando perfil." }, 500);
-
-    // Marcar code como reclamado
-    const { error: updErr } = await admin
-      .from("short_codes")
-      .update({ status: "claimed", slug })
-      .eq("code", code);
-    if (updErr) {
-      await admin.from("profiles").delete().eq("id", profile.id);
-      return j({ ok: false, error: "Error actualizando el código." }, 500);
+    if (e1 || !sc || sc.status !== "unclaimed") {
+      return NextResponse.json(
+        { ok: false, error: "Code invalid or claimed" },
+        { status: 400 }
+      );
     }
 
-    return j({ ok: true, slug: profile.slug, edit_token: profile.edit_token });
+    // 2) Verifica slug libre
+    const { data: existing } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
+
+    if (existing) {
+      return NextResponse.json(
+        { ok: false, error: "Slug taken" },
+        { status: 409 }
+      );
+    }
+
+    // 3) Crea profile (template_config opcional)
+    const cfg =
+      template_config && typeof template_config === "object"
+        ? template_config
+        : {};
+
+    const { error: e2 } = await admin.from("profiles").insert({
+      name,
+      last_name,
+      whatsapp: waE164,
+      email: email || null,
+      slug,
+      template_key: "TemplateLinkBio",
+      template_config: cfg,
+    });
+
+    if (e2) {
+      return NextResponse.json(
+        { ok: false, error: e2.message },
+        { status: 500 }
+      );
+    }
+
+    // 4) Actualiza short_code
+    const { error: e3 } = await admin
+      .from("short_codes")
+      .update({
+        status: "claimed",
+        slug,
+        claimed_at: new Date().toISOString(),
+      })
+      .eq("code", code);
+
+    if (e3) {
+      return NextResponse.json(
+        { ok: false, error: e3.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ ok: true, slug });
   } catch (err: any) {
-    return j({ ok: false, error: err?.message || "Error inesperado." }, 500);
+    return NextResponse.json(
+      { ok: false, error: err?.message || "Server error" },
+      { status: 500 }
+    );
   }
 }

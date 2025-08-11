@@ -1,73 +1,50 @@
 // src/app/[path]/page.tsx
-export const dynamic = "force-dynamic";
-
+import { supabase } from "@/lib/supabase/client";
+import { templateRegistry } from "@/templates/registry";
 import { redirect } from "next/navigation";
-// Usa el client público (seguro en server) que ya creaste:
-import { supabase } from "@/lib/supabaseClient";
-import ClaimForm from "./ClaimForm";
+import ClaimForm from "@/app/(claim)/components/ClaimForm";
+
+// evita cache agresivo para esta ruta dinámica
+export const dynamic = "force-dynamic";
 
 type Params = { path: string };
 
-export default async function Page({ params }: { params: Promise<Params> }) {
-  // 👇 Next 15: params puede ser una Promise; hay que await
-  const { path } = await params;
-  const slugOrCode = decodeURIComponent(path);
+export default async function Page(props: { params: Promise<Params> }) {
+  // Next 15: params es Promise => hay que await
+  const { path } = await props.params;
+  const decoded = decodeURIComponent(path);
 
-  // 1) ¿coincide con un slug de perfil?
-  const { data: prof, error: profErr } = await supabase
+  // 1) ¿Es slug de perfil?
+  const { data: prof } = await supabase
     .from("profiles")
     .select("*")
-    .eq("slug", slugOrCode)
+    .eq("slug", decoded)
     .maybeSingle();
 
-  if (profErr) {
-    return (
-      <div className="p-6">
-        Error cargando perfil: {String(profErr.message || profErr)}
-      </div>
-    );
-  }
-
   if (prof) {
-    // Carga perezosa de la plantilla LinkBio
-    const mod = await import("@/templates/TemplateLinkBio/component");
-    const Mod = (mod as any).default as React.FC<any>;
+    // carga del template según profile.template_key
+    const loader =
+      templateRegistry[prof.template_key as keyof typeof templateRegistry];
+    // tipado laxo para no pelear con props específicas en el MVP
+    const Mod = (await loader()).default as any;
     return <Mod profile={prof} />;
   }
 
-  // 2) ¿coincide con un short code?
-  const { data: sc, error: scErr } = await supabase
+  // 2) ¿Es short code?
+  const { data: sc } = await supabase
     .from("short_codes")
     .select("*")
-    .eq("code", slugOrCode)
+    .eq("code", decoded)
     .maybeSingle();
-
-  if (scErr) {
-    return (
-      <div className="p-6">
-        Error cargando código: {String(scErr.message || scErr)}
-      </div>
-    );
-  }
 
   if (sc) {
     if (sc.status === "unclaimed") {
       return <ClaimForm code={sc.code} />;
     }
-    if (sc.external_url) {
-      redirect(sc.external_url);
-    }
-    if (sc.slug) {
-      redirect(`/${sc.slug}`);
-    }
-    return (
-      <div className="p-6">
-        Código <b>{sc.code}</b> en estado <b>{sc.status}</b> pero sin destino
-        configurado.
-      </div>
-    );
+    if (sc.external_url) redirect(sc.external_url);
+    if (sc.slug) redirect(`/${sc.slug}`);
   }
 
-  // 3) 404 sencillo
-  return <div className="p-6">No encontrado: {slugOrCode}</div>;
+  // 3) 404 simple
+  return <div className="p-8">No encontrado.</div>;
 }
