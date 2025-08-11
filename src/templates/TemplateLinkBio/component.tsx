@@ -132,7 +132,7 @@ const BRAND_BG: Record<string, string> = {
   phone: "#34C759", // iOS green
   website: "#A1A1AA", // neutral
   facebook: "#1877F2",
-  instagram: "instagram", // hacemos gradiente especial
+  instagram: "instagram", // gradiente especial
   tiktok: "#000000",
   x: "#000000",
   maps: "#4285F4",
@@ -141,7 +141,6 @@ const BRAND_BG: Record<string, string> = {
 
 const BrandBg = ({ brand }: { brand: string }) => {
   if (brand === "instagram") {
-    // gradiente estilo Instagram
     return (
       <div
         className="absolute inset-0 rounded-xl"
@@ -165,7 +164,7 @@ export default function TemplateLinkBio({ profile }: { profile: Profile }) {
   const fullName =
     `${profile.name ?? ""} ${profile.last_name ?? ""}`.trim() || profile.slug;
 
-  // Acciones base (con key para color)
+  // Acciones base
   const phoneDigits = toE164(profile.whatsapp);
   const baseActions = [
     profile.email
@@ -197,7 +196,6 @@ export default function TemplateLinkBio({ profile }: { profile: Profile }) {
     Icon: any;
   }[];
 
-  // Extras
   const extras = (profile.template_config?.extra || [])
     .map(extraToAction)
     .filter(Boolean) as {
@@ -209,17 +207,19 @@ export default function TemplateLinkBio({ profile }: { profile: Profile }) {
 
   const actions = [...baseActions, ...extras];
 
+  // CTA configurable
+  const CTA_FREE = process.env.NEXT_PUBLIC_CTA_FREE_PATH || "/claim/free";
+
   return (
-    <div className="w-full flex justify-center">
+    <div className="w-full flex justify-center min-h-screen bg-neutral-50">
       <div
         className={cx(
           "relative w-[360px] max-w-full rounded-[28px] overflow-hidden shadow-xl",
-          "bg-white"
+          "bg-white flex flex-col"
         )}
       >
-        {/* HEADER con avatar grande que se degrada hacia abajo */}
-        <div className="relative h-56 w-full">
-          {/* Imagen ocupa todo el header */}
+        {/* HEADER con avatar grande que se degrada hacia abajo (50% del viewport) */}
+        <div className="relative h-[50vh] w-full">
           <img
             src={avatar}
             alt={fullName}
@@ -229,14 +229,12 @@ export default function TemplateLinkBio({ profile }: { profile: Profile }) {
                 "/defaults/avatar.png";
             }}
             style={{
-              // Máscara: la parte baja se va volviendo transparente → se funde con el fondo blanco
               WebkitMaskImage:
                 "linear-gradient(to bottom, rgba(0,0,0,1) 55%, rgba(0,0,0,0.85) 72%, rgba(0,0,0,0.4) 88%, rgba(0,0,0,0) 100%)",
               maskImage:
                 "linear-gradient(to bottom, rgba(0,0,0,1) 55%, rgba(0,0,0,0.85) 72%, rgba(0,0,0,0.4) 88%, rgba(0,0,0,0) 100%)",
             }}
           />
-          {/* Sombra sutil superior */}
           <div className="absolute inset-0 bg-gradient-to-b from-black/15 via-transparent to-transparent" />
         </div>
 
@@ -247,15 +245,20 @@ export default function TemplateLinkBio({ profile }: { profile: Profile }) {
               {fullName}
             </h1>
             <p className="text-sm text-neutral-600 mt-1">Emprendedor</p>
+
+            {/* mini-bio 20% más pequeña y gris */}
             {profile.mini_bio ? (
-              <p className="text-sm text-neutral-700 mt-2">
+              <p className="text-[0.8rem] leading-snug text-neutral-500 mt-2">
                 {profile.mini_bio}
               </p>
             ) : null}
           </div>
 
+          {/* divisor suave */}
+          <div className="h-px bg-neutral-200/80 mt-4 mb-4" />
+
           {/* GRID de botones 3 por fila con color de marca */}
-          <div className="grid grid-cols-3 gap-4 mt-5">
+          <div className="grid grid-cols-3 gap-4">
             {actions.map(({ key, label, href, Icon }, i) => (
               <a
                 key={i}
@@ -274,6 +277,17 @@ export default function TemplateLinkBio({ profile }: { profile: Profile }) {
               </a>
             ))}
           </div>
+
+          {/* divisor suave */}
+          <div className="h-px bg-neutral-200/80 mt-5 mb-3" />
+
+          {/* CTA para crear una WOWKard */}
+          <a
+            href={CTA_FREE}
+            className="block text-center text-sm text-neutral-600 hover:text-neutral-900 underline underline-offset-4"
+          >
+            Crea tu WOWKard gratis
+          </a>
         </div>
       </div>
     </div>
