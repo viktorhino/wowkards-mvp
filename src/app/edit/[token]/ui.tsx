@@ -89,8 +89,11 @@ export default function EditClient({
   const initialAvatar = profile.template_config?.avatar_url || null;
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatar);
   const [fileAvatar, setFileAvatar] = useState<File | null>(null);
+
+  // Estado
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [viewLink, setViewLink] = useState<string | null>(null); // <-- nuevo
 
   const addExtra = () => {
     if (extras.length >= MAX_EXTRAS) return;
@@ -137,6 +140,7 @@ export default function EditClient({
   const save = async () => {
     setSaving(true);
     setMsg(null);
+    setViewLink(null);
     try {
       // Validación extras
       if (extras.some((e) => !e.value.trim())) {
@@ -147,7 +151,7 @@ export default function EditClient({
       // Subir avatar si corresponde
       const newAvatarUrl = await uploadAvatarIfAny(fileAvatar);
 
-      // Armar template_config resultante
+      // template_config resultante
       const template_config = {
         ...(profile.template_config || {}),
         extra: extras,
@@ -168,13 +172,14 @@ export default function EditClient({
         }),
       });
       const j = await res.json();
-      if (!res.ok || !j.ok) throw new Error(j.error || "Error guardando");
 
-      setMsg("Guardado ✔");
-      // Reset de file (ya subido)
+      if (!res.ok || !j.ok) throw new Error(j.error || "No se pudo actualizar");
+      // Éxito: mensaje y link
+      setMsg("Guardado");
+      if (j.link) setViewLink(j.link as string);
       setFileAvatar(null);
     } catch (e: any) {
-      setMsg(e.message || "Error");
+      setMsg(e.message || "No se pudo actualizar.");
     } finally {
       setSaving(false);
     }
@@ -336,7 +341,22 @@ export default function EditClient({
           </button>
         </div>
 
-        {msg && <div className="text-sm">{msg}</div>}
+        {/* Mensaje + botón de ver */}
+        {msg && (
+          <div className="flex flex-col gap-2">
+            <div className="text-sm">{msg}</div>
+            {viewLink && (
+              <a
+                href={viewLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg bg-black text-white py-2 text-center"
+              >
+                Ver mi WOWKard
+              </a>
+            )}
+          </div>
+        )}
 
         <button
           onClick={save}
