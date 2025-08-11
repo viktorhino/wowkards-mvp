@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { admin } from "@/lib/supabaseAdmin";
 
-// Helper para responder JSON siempre
 const j = (body: any, status = 200) =>
   new NextResponse(JSON.stringify(body), {
     status,
@@ -10,7 +9,6 @@ const j = (body: any, status = 200) =>
 
 export async function POST(req: Request) {
   try {
-    // 1) Parseo de body
     let body: any;
     try {
       body = await req.json();
@@ -29,12 +27,11 @@ export async function POST(req: Request) {
       template_config,
     } = body || {};
 
-    // 2) Validaciones mínimas
     if (!code || !name || !last_name || !slug) {
       return j({ ok: false, error: "Faltan campos requeridos." }, 400);
     }
 
-    // 3) Slug disponible
+    // Slug libre
     {
       const { data: existing, error } = await admin
         .from("profiles")
@@ -46,20 +43,18 @@ export async function POST(req: Request) {
         return j({ ok: false, error: "El slug ya está ocupado." }, 400);
     }
 
-    // 4) Code existe y está unclaimed
+    // Code unclaimed
     const { data: sc, error: scErr } = await admin
       .from("short_codes")
       .select("code,status")
       .eq("code", code)
       .maybeSingle();
-
     if (scErr) return j({ ok: false, error: "Error buscando el código." }, 500);
     if (!sc) return j({ ok: false, error: "Código no existe." }, 404);
-    if (sc.status !== "unclaimed") {
+    if (sc.status !== "unclaimed")
       return j({ ok: false, error: "Este código ya fue reclamado." }, 409);
-    }
 
-    // 5) Crear perfil
+    // Crear perfil (pedimos edit_token en la selección)
     const { data: profile, error: insErr } = await admin
       .from("profiles")
       .insert({
@@ -72,28 +67,24 @@ export async function POST(req: Request) {
         template_key: "TemplateLinkBio",
         template_config: template_config ?? {},
       })
-      .select("id")
+      .select("id, slug, edit_token")
       .single();
 
-    if (insErr || !profile) {
+    if (insErr || !profile)
       return j({ ok: false, error: "Error guardando perfil." }, 500);
-    }
 
-    // 6) Marcar el code como reclamado y enlazar slug
+    // Marcar code como reclamado
     const { error: updErr } = await admin
       .from("short_codes")
       .update({ status: "claimed", slug })
       .eq("code", code);
-
     if (updErr) {
-      // rollback simple: borrar perfil creado si falla la actualización del code
       await admin.from("profiles").delete().eq("id", profile.id);
       return j({ ok: false, error: "Error actualizando el código." }, 500);
     }
 
-    return j({ ok: true, slug }, 200);
+    return j({ ok: true, slug: profile.slug, edit_token: profile.edit_token });
   } catch (err: any) {
-    // Nunca devolvemos HTML
     return j({ ok: false, error: err?.message || "Error inesperado." }, 500);
   }
 }

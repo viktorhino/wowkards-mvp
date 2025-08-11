@@ -62,6 +62,13 @@ const availableTypes = (extras: ExtraItem[], exceptIndex?: number) =>
     (k) => !usedTypes(extras, exceptIndex).has(k)
   );
 
+const normalizeWhats = (raw: string, defaultCc = "57") => {
+  const d = raw.replace(/\D/g, "");
+  if (d.startsWith(defaultCc)) return `+${d}`;
+  if (raw.trim().startsWith("+")) return `+${d}`;
+  return `+${defaultCc}${d}`;
+};
+
 /* -------------------- Componente -------------------- */
 
 export default function ClaimForm({ code }: Props) {
@@ -227,7 +234,7 @@ export default function ClaimForm({ code }: Props) {
           code,
           name: capitalizeWords(name),
           last_name: capitalizeWords(last),
-          whatsapp: whatsapp.replace(/\D/g, ""),
+          whatsapp: normalizeWhats(whatsapp),
           email,
           mini_bio: miniBio,
           slug: s,
@@ -263,7 +270,8 @@ export default function ClaimForm({ code }: Props) {
       }
 
       // 3) Redirigir
-      router.push(`/${finalSlug}`);
+      //      router.push(`/${finalSlug}`);
+      router.push(`/preview/${finalSlug}?edit=${payload.edit_token}`);
     } catch (err: any) {
       setError(err?.message || "Error inesperado.");
     } finally {
