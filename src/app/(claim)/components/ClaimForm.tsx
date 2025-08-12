@@ -389,6 +389,7 @@ export default function ClaimForm({ code }: { code: string }) {
         <div className="bg-white rounded-2xl shadow-xl min-h-[calc(100vh-160px)] p-4 sm:p-6">
           {/* Formulario */}
           <form
+            id="claimForm"
             ref={formRef}
             onSubmit={onSubmit}
             className="flex flex-col gap-6"
@@ -759,6 +760,8 @@ export default function ClaimForm({ code }: { code: string }) {
       <div className="w-full bg-[#000]/80 backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 py-3 flex gap-3">
           <button
+            type="submit"
+            form="claimForm"
             disabled={!canSubmit || saving}
             className="flex-1 rounded-full bg-[#FFC62E] text-black py-3 font-semibold shadow-[inset_0_-2px_0_rgba(0,0,0,.18)] disabled:opacity-50 hover:brightness-105"
             onClick={(e) => {
