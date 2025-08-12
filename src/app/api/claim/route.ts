@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { normalizeWhatsapp } from "@/lib/phone";
+import { capitalizeWords } from "@/lib/text";
 
 export async function POST(req: Request) {
   try {
@@ -70,9 +71,12 @@ export async function POST(req: Request) {
         ? template_config
         : {};
 
+    const nameCap = capitalizeWords(name);
+    const lastCap = capitalizeWords(last_name);
+
     const { error: e2 } = await admin.from("profiles").insert({
-      name,
-      last_name,
+      name: nameCap,
+      last_name: lastCap,
       whatsapp: waE164,
       email: email || null,
       slug,

@@ -5,11 +5,11 @@ import type { TemplateLayout } from "@/templates/types";
 import { suggestSlug, normalizeSlug } from "@/lib/slug";
 import { normalizeWhatsapp } from "@/lib/phone";
 import { z } from "zod";
+import { capitalizeWords } from "@/lib/text";
+
 const emailSchema = z.string().email();
 
-// ==================== Utils e iconos (pueden ir fuera) ====================
-
-// Solo dígitos y un único '+' al inicio
+/* ───────── utils e iconos ───────── */
 function sanitizeTelInput(raw: string) {
   let s = raw.replace(/[^\d+]/g, "");
   if (s.startsWith("+")) s = "+" + s.slice(1).replace(/\+/g, "");
@@ -17,34 +17,29 @@ function sanitizeTelInput(raw: string) {
   return s;
 }
 
-// Agrupa dígitos para máscara
-function applyGroups(digits: string, groups: number[], sep = "-") {
+function applyGroups(d: string, groups: number[], sep = "-") {
   const out: string[] = [];
   let i = 0;
   for (const g of groups) {
-    if (i >= digits.length) break;
-    out.push(digits.slice(i, i + g));
+    if (i >= d.length) break;
+    out.push(d.slice(i, i + g));
     i += g;
   }
-  if (i < digits.length) out.push(digits.slice(i));
+  if (i < d.length) out.push(d.slice(i));
   return out.filter(Boolean).join(sep);
 }
-
-// Máscara visual: CO => +57-3xx-xxx-xx-xx ; otros => +<digits> sin grupos
 function maskWhatsappDisplay(raw: string, defaultCC = "+57") {
   let s = sanitizeTelInput(raw);
   if (!s.startsWith("+"))
     s = defaultCC + s.replace(/\D/g, "").replace(/^0+/, "");
   const digits = s.replace(/\D/g, "");
   if (digits.startsWith("57")) {
-    const nat = digits.slice(2); // nacional
+    const nat = digits.slice(2);
     const maskedNat = applyGroups(nat, [3, 3, 2, 2]);
     return "+57-" + maskedNat.replace(/-$/, "");
   }
   return "+" + digits;
 }
-
-// Paste limpio con actualización de estados
 function handleTelPaste(
   e: React.ClipboardEvent<HTMLInputElement>,
   setRaw: (v: string) => void,
@@ -59,9 +54,8 @@ function handleTelPaste(
   setValid(normalizeWhatsapp(clean).valid);
 }
 
-// Iconos inline
-const IconCheck = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 20 20" fill="currentColor" {...props}>
+const IconCheck = (p: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 20 20" fill="currentColor" {...p}>
     <path
       fillRule="evenodd"
       d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0l-3-3A1 1 0 016.757 9.793l2.293 2.293 6.543-6.543a1 1 0 011.414 0z"
@@ -69,8 +63,8 @@ const IconCheck = (props: React.SVGProps<SVGSVGElement>) => (
     />
   </svg>
 );
-const IconX = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 20 20" fill="currentColor" {...props}>
+const IconX = (p: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 20 20" fill="currentColor" {...p}>
     <path
       fillRule="evenodd"
       d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
@@ -78,8 +72,8 @@ const IconX = (props: React.SVGProps<SVGSVGElement>) => (
     />
   </svg>
 );
-const IconSpinner = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 24 24" {...props}>
+const IconSpinner = (p: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" {...p}>
     <circle
       cx="12"
       cy="12"
@@ -93,7 +87,6 @@ const IconSpinner = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 const LAYOUTS: TemplateLayout[] = ["cardA", "cardB", "cardC"];
-
 type ExtraKind =
   | "direccion"
   | "instagram"
@@ -102,8 +95,6 @@ type ExtraKind =
   | "x"
   | "otro";
 type ExtraRow = { id: string; kind: ExtraKind; label: string; value: string };
-
-// Campos únicos (no repetibles)
 const UNIQUE_KINDS: Exclude<ExtraKind, "otro">[] = [
   "direccion",
   "instagram",
@@ -111,7 +102,6 @@ const UNIQUE_KINDS: Exclude<ExtraKind, "otro">[] = [
   "tiktok",
   "x",
 ];
-
 const KIND_LABEL: Record<Exclude<ExtraKind, "otro">, string> = {
   direccion: "Dirección",
   instagram: "Instagram",
@@ -119,51 +109,47 @@ const KIND_LABEL: Record<Exclude<ExtraKind, "otro">, string> = {
   tiktok: "TikTok",
   x: "X",
 };
-
 function isHexColor(v: string) {
   return /^#([0-9a-f]{6}|[0-9a-f]{3})$/i.test(v.trim());
 }
 
-// ==================== Componente ====================
-
+/* ───────── componente ───────── */
 export default function ClaimForm({ code }: { code: string }) {
-  // Básicos
+  // stepper y estado de guardado
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [saving, setSaving] = useState(false);
+
+  // básicos
   const [name, setName] = useState("");
   const [last, setLast] = useState("");
 
-  // Slug
+  // slug
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [slugOk, setSlugOk] = useState<boolean | null>(null);
-  const [checking, setChecking] = useState(false);
+  const [checkingSlug, setCheckingSlug] = useState(false);
 
-  // WhatsApp (máscara/validación)
-  const [whatsapp, setWhatsapp] = useState(""); // crudo/sanitizado
-  const [waDisplay, setWaDisplay] = useState(""); // con máscara
+  // whatsapp
+  const [whatsapp, setWhatsapp] = useState("");
+  const [waDisplay, setWaDisplay] = useState("");
   const [waValid, setWaValid] = useState<boolean | null>(null);
 
-  // Email
+  // email
   const [email, setEmail] = useState("");
   const [emailValid, setEmailValid] = useState<boolean | null>(null);
   const [emailChecking, setEmailChecking] = useState(false);
   const [emailTaken, setEmailTaken] = useState(false);
 
-  // Otros
+  // otros
   const [bio, setBio] = useState("");
-  const [isMobile, setIsMobile] = useState(false);
-
   const [layout, setLayout] = useState<TemplateLayout>("cardA");
   const [primary, setPrimary] = useState("#0A66FF");
   const [accent, setAccent] = useState("#4FB0FF");
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
 
-  // Cámara nativa (input oculto)
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-
-  // Extras (máx 3)
+  // extras
   const [extras, setExtras] = useState<ExtraRow[]>([]);
-
-  // --------- EXTRAS sin duplicados ----------
   const usedUniqueKinds = useMemo(
     () =>
       new Set(
@@ -174,79 +160,17 @@ export default function ClaimForm({ code }: { code: string }) {
       ),
     [extras]
   );
-
   const firstAvailableKind = useMemo(() => {
     for (const k of UNIQUE_KINDS) if (!usedUniqueKinds.has(k)) return k;
     return null;
   }, [usedUniqueKinds]);
+  const canAddExtra = extras.length < 3;
 
-  const canAddExtra =
-    extras.length < 3 && (firstAvailableKind !== null || true); // podemos agregar "otro"
+  // refs
+  const formRef = useRef<HTMLFormElement>(null);
+  const fileCamRef = useRef<HTMLInputElement>(null); // para abrir cámara nativa (móvil)
 
-  function addExtra() {
-    if (!canAddExtra) return;
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const kind: ExtraKind = firstAvailableKind ?? "otro";
-    setExtras((prev) => [
-      ...prev,
-      {
-        id,
-        kind,
-        label:
-          kind === "otro" ? "" : KIND_LABEL[kind as Exclude<ExtraKind, "otro">],
-        value: "",
-      },
-    ]);
-  }
-
-  function removeExtra(id: string) {
-    setExtras((prev) => prev.filter((e) => e.id !== id));
-  }
-
-  function updateExtra(id: string, patch: Partial<ExtraRow>) {
-    setExtras((prev) =>
-      prev.map((e) => {
-        if (e.id !== id) return e;
-        const next: ExtraRow = { ...e, ...patch };
-        if (patch.kind) {
-          const nk = patch.kind;
-          if (nk !== "otro")
-            next.label = KIND_LABEL[nk as Exclude<ExtraKind, "otro">];
-          else if (e.kind !== "otro") next.label = "";
-        }
-        return next;
-      })
-    );
-  }
-
-  // --------- SLUG ----------
-  useEffect(() => {
-    if (slugTouched) return;
-    const s = suggestSlug(name || "", last || "");
-    setSlug(s);
-  }, [name, last, slugTouched]);
-
-  useEffect(() => {
-    if (!slug) {
-      setSlugOk(null);
-      return;
-    }
-    const t = setTimeout(async () => {
-      setChecking(true);
-      try {
-        const res = await fetch(
-          `/api/slug/check?slug=${encodeURIComponent(slug)}`
-        );
-        const json = await res.json();
-        setSlugOk(!!json?.available);
-      } finally {
-        setChecking(false);
-      }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [slug]);
-
-  // Detección móvil
+  // heurística móvil
   useEffect(() => {
     const ua = navigator.userAgent || navigator.vendor || "";
     const mobileUA =
@@ -258,6 +182,32 @@ export default function ClaimForm({ code }: { code: string }) {
     setIsMobile(mobileUA || (touch && coarse));
   }, []);
 
+  // slug sugerido / chequeo
+  useEffect(() => {
+    if (slugTouched) return;
+    setSlug(suggestSlug(name || "", last || ""));
+  }, [name, last, slugTouched]);
+
+  useEffect(() => {
+    if (!slug) {
+      setSlugOk(null);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setCheckingSlug(true);
+      try {
+        const res = await fetch(
+          `/api/slug/check?slug=${encodeURIComponent(slug)}`
+        );
+        const j = await res.json();
+        setSlugOk(!!j?.available);
+      } finally {
+        setCheckingSlug(false);
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [slug]);
+
   function onSlugChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = normalizeSlug(e.target.value);
     setSlug(v);
@@ -265,14 +215,13 @@ export default function ClaimForm({ code }: { code: string }) {
     if (v.length === 0) setSlugOk(null);
   }
 
-  // --------- EMAIL ----------
+  // email
   function onEmailChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = e.target.value.toLowerCase();
     setEmail(v);
     setEmailValid(emailSchema.safeParse(v).success);
     setEmailTaken(false);
   }
-
   useEffect(() => {
     if (!emailValid) {
       setEmailTaken(false);
@@ -293,14 +242,13 @@ export default function ClaimForm({ code }: { code: string }) {
     return () => clearTimeout(t);
   }, [email, emailValid]);
 
-  // --------- WHATSAPP ----------
+  // whatsapp
   function onWhatsappChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = sanitizeTelInput(e.target.value);
     setWhatsapp(raw);
     setWaDisplay(maskWhatsappDisplay(raw));
     setWaValid(normalizeWhatsapp(raw).valid);
   }
-
   function onWhatsappBlur() {
     const norm = normalizeWhatsapp(whatsapp);
     setWhatsapp(norm.e164);
@@ -308,71 +256,120 @@ export default function ClaimForm({ code }: { code: string }) {
     setWaValid(norm.valid);
   }
 
-  // --------- SUBMIT ----------
-  const canSubmit = useMemo(
-    () =>
-      code &&
-      name.trim() &&
-      last.trim() &&
-      slugOk === true &&
-      waValid === true &&
-      emailValid === true &&
-      isHexColor(primary) &&
-      isHexColor(accent),
-    [code, name, last, slugOk, waValid, emailValid, primary, accent]
-  );
+  // extras helpers
+  function addExtra() {
+    if (!canAddExtra) return;
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const kind: ExtraKind = firstAvailableKind ?? "otro";
+    setExtras((prev) => [
+      ...prev,
+      {
+        id,
+        kind,
+        label:
+          kind === "otro" ? "" : KIND_LABEL[kind as Exclude<ExtraKind, "otro">],
+        value: "",
+      },
+    ]);
+  }
+  function removeExtra(id: string) {
+    setExtras((prev) => prev.filter((e) => e.id !== id));
+  }
+  function updateExtra(id: string, patch: Partial<ExtraRow>) {
+    setExtras((prev) =>
+      prev.map((e) => {
+        if (e.id !== id) return e;
+        const next: ExtraRow = { ...e, ...patch };
+        if (patch.kind) {
+          const nk = patch.kind;
+          if (nk !== "otro")
+            next.label = KIND_LABEL[nk as Exclude<ExtraKind, "otro">];
+          else if (e.kind !== "otro") next.label = "";
+        }
+        return next;
+      })
+    );
+  }
 
+  // validaciones por paso
+  const step1Ok =
+    name.trim() &&
+    last.trim() &&
+    slugOk === true &&
+    waValid === true &&
+    emailValid === true &&
+    !emailTaken;
+  const step2Ok = true; // opcionales
+  const step3Ok = isHexColor(primary) && isHexColor(accent) && layout;
+  const canSubmit = !!(step1Ok && step2Ok && step3Ok) && !saving;
+
+  // submit con estado "saving"
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
+    setSaving(true);
 
-    const { e164: waE164, valid } = normalizeWhatsapp(whatsapp);
-    if (!valid) {
-      alert("WhatsApp no es válido");
-      return;
+    try {
+      const { e164: waE164, valid } = normalizeWhatsapp(whatsapp);
+      if (!valid) {
+        alert("WhatsApp no es válido");
+        setStep(1);
+        setSaving(false);
+        return;
+      }
+      const emailLower = (email || "").trim().toLowerCase();
+      const slugFinal = normalizeSlug(slug);
+
+      const extrasOut = extras
+        .map((it) => ({
+          kind: it.kind,
+          label:
+            it.kind === "otro"
+              ? it.label?.trim() || "Dato"
+              : KIND_LABEL[it.kind as Exclude<ExtraKind, "otro">],
+          value: it.value.trim(),
+        }))
+        .filter((x) => x.value.length > 0);
+
+      const nameCap = capitalizeWords(name);
+      const lastCap = capitalizeWords(last);
+
+      const body = {
+        code,
+        name: nameCap,
+        last_name: lastCap,
+        whatsapp: waE164,
+        email: emailLower,
+        slug: slugFinal,
+        template_config: {
+          layout,
+          brand: { primary, accent },
+          bio: bio || undefined,
+          photoDataUrl: photoDataUrl || undefined,
+          extras: extrasOut.length ? extrasOut : undefined,
+        },
+      };
+
+      const res = await fetch("/api/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (json?.ok && json?.slug) {
+        window.location.href = `/${json.slug}`;
+      } else {
+        alert(json?.error || "No se pudo reclamar el código.");
+        setSaving(false);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error de red: intenta nuevamente.");
+      setSaving(false);
     }
-    const slugFinal = normalizeSlug(slug);
-    const emailLower = (email || "").trim().toLowerCase();
-
-    const extrasOut = extras
-      .map((it) => ({
-        kind: it.kind,
-        label:
-          it.kind === "otro"
-            ? it.label?.trim() || "Dato"
-            : KIND_LABEL[it.kind as Exclude<ExtraKind, "otro">],
-        value: it.value.trim(),
-      }))
-      .filter((x) => x.value.length > 0);
-
-    const body = {
-      code,
-      name,
-      last_name: last,
-      whatsapp: waE164,
-      email: emailLower, // <- clave correcta
-      slug: slugFinal,
-      template_config: {
-        layout,
-        brand: { primary, accent },
-        bio: bio || undefined,
-        photoDataUrl: photoDataUrl || undefined,
-        extras: extrasOut.length ? extrasOut : undefined,
-      },
-    };
-
-    const res = await fetch("/api/claim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    const json = await res.json();
-    if (json?.ok && json?.slug) window.location.href = `/${json.slug}`;
-    else alert(json?.error || "No se pudo reclamar el código.");
   }
 
-  // Handlers de archivo
+  // archivo -> dataURL
   function onFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -381,337 +378,400 @@ export default function ClaimForm({ code }: { code: string }) {
     reader.readAsDataURL(f);
   }
 
-  function triggerNativeCamera() {
-    cameraInputRef.current?.click();
-  }
-
-  function onCameraCaptureChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhotoDataUrl(String(reader.result));
-    reader.readAsDataURL(f);
-  }
-
-  // ==================== Render ====================
   return (
-    <form onSubmit={onSubmit} className="max-w-md mx-auto p-4 space-y-4">
-      <h1 className="text-xl font-semibold">Activar tu WOWKard ({code})</h1>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-[#ffbb00] to-[#ffc833]">
+      {/* Contenedor central */}
+      <div className="w-full mx-auto max-w-2xl px-4 pt-8 pb-2">
+        <h1 className="text-[#23242a] text-3xl font-black mb-6 text-center tracking-[-0.05em]">
+          Crea tu WOW kard
+        </h1>
+        {/* Tarjeta que ocupa (casi) todo el alto visible */}
+        <div className="bg-white rounded-2xl shadow-xl min-h-[calc(100vh-160px)] p-4 sm:p-6">
+          {/* Formulario */}
+          <form
+            id="claimForm"
+            ref={formRef}
+            onSubmit={onSubmit}
+            className="flex flex-col gap-6"
+          >
+            {/* ====== PASO 1 ====== */}
+            <section>
+              <div className="mb-3 flex items-center gap-3">
+                <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-[#FFC700]">
+                  PASO 1
+                </span>
+                <h2 className="text-base font-semibold text-[#333]">
+                  Datos básicos
+                </h2>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4 space-y-3">
+                {/* Nombre / Apellido */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    className="bg-white text-slate-900 placeholder-slate-400 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50"
+                    placeholder="Nombre"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                  <input
+                    className="bg-white text-slate-900 placeholder-slate-400 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50"
+                    placeholder="Apellido"
+                    value={last}
+                    onChange={(e) => setLast(e.target.value)}
+                  />
+                </div>
 
-      {/* Nombre/Apellido */}
-      <div className="grid grid-cols-2 gap-3">
-        <input
-          className="border rounded p-2"
-          placeholder="Nombre"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <input
-          className="border rounded p-2"
-          placeholder="Apellido"
-          value={last}
-          onChange={(e) => setLast(e.target.value)}
-        />
-      </div>
+                {/* URL (slug) en una línea */}
+                {/* URL (slug) en dos líneas, responsive */}
+                <div className="mt-3 text-sm">
+                  {/* Línea 1 */}
+                  <div className="text-slate-700 mb-1 text-center">
+                    Tu URL sería:{" "}
+                    <span className="whitespace-nowrap text-slate-700">
+                      https://mi.wowkard.es/
+                    </span>
+                  </div>
 
-      {/* Tu URL en una sola línea */}
-      <div className="flex items-center gap-2 text-sm">
-        <span className="whitespace-nowrap">Tu URL sería: mi.wowkard.es/</span>
-        <input
-          className="border rounded px-2 py-1 w-44 sm:w-56"
-          value={slug}
-          onChange={onSlugChange}
-          onBlur={() => setSlug(normalizeSlug(slug))}
-          aria-label="Slug"
-        />
-        <span className="inline-flex items-center justify-center w-5 h-5">
-          {checking ? (
-            <IconSpinner
-              className="w-5 h-5 animate-spin text-gray-400"
-              aria-label="Comprobando"
-            />
-          ) : slug && slugOk === true ? (
-            <IconCheck
-              className="w-5 h-5 text-green-600"
-              aria-label="Disponible"
-            />
-          ) : slug && slugOk === false ? (
-            <IconX className="w-5 h-5 text-red-600" aria-label="Ocupado" />
-          ) : null}
-        </span>
-      </div>
+                  {/* Línea 2: prefijo fijo + input flexible + icono absoluto */}
+                  <div className="flex items-center gap-2">
+                    <span className="whitespace-nowrap text-slate-700"></span>
 
-      {/* WhatsApp */}
-      <div>
-        <div className="flex items-center gap-2">
-          <input
-            className="border rounded p-2 flex-1"
-            placeholder="WhatsApp"
-            value={waDisplay}
-            onChange={onWhatsappChange}
-            onBlur={onWhatsappBlur}
-            onPaste={(e) =>
-              handleTelPaste(e, setWhatsapp, setWaDisplay, setWaValid)
-            }
-            inputMode="tel"
-            autoComplete="tel"
-            // IMPORTANTE: escapar las barras en TSX
-            pattern="^\\+?\\d(?:[ -]?\\d)*$"
-            aria-label="WhatsApp"
-          />
-          <span className="inline-flex items-center justify-center w-5 h-5">
-            {waValid === true ? (
-              <IconCheck
-                className="w-5 h-5 text-green-600"
-                aria-label="válido"
+                    <div className="relative flex-1 min-w-0">
+                      <input
+                        className="bg-white text-slate-900 placeholder-[#cccccd] rounded-lg px-2 py-1 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 w-full pr-7 text-center"
+                        value={slug}
+                        onChange={onSlugChange}
+                        onBlur={() => setSlug(normalizeSlug(slug))}
+                        aria-label="Slug"
+                      />
+                      {/* Icono superpuesto a la derecha */}
+                      <span className="absolute inset-y-0 right-1 flex items-center justify-center w-5">
+                        {checkingSlug ? (
+                          <IconSpinner className="w-5 h-5 animate-spin text-slate-400" />
+                        ) : slug && slugOk === true ? (
+                          <IconCheck className="w-5 h-5 text-green-600" />
+                        ) : slug && slugOk === false ? (
+                          <IconX className="w-5 h-5 text-red-600" />
+                        ) : null}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* WhatsApp + Email */}
+                <div className="mt-3 grid grid-cols-1 gap-3">
+                  <div className="relative">
+                    <input
+                      className="bg-white text-[#24262b] placeholder-[#cccccd] rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 flex-1 w-full"
+                      placeholder="WhatsApp"
+                      value={waDisplay}
+                      onChange={onWhatsappChange}
+                      onBlur={onWhatsappBlur}
+                      onPaste={(e) =>
+                        handleTelPaste(e, setWhatsapp, setWaDisplay, setWaValid)
+                      }
+                      inputMode="tel"
+                      autoComplete="tel"
+                      pattern="^\\+?\\d(?:[ -]?\\d)*$"
+                      aria-label="WhatsApp"
+                    />
+                    <span className="absolute inset-y-0 right-1 flex items-center justify-center w-5">
+                      {waValid === true ? (
+                        <IconCheck className="w-5 h-5 text-green-600" />
+                      ) : waValid === false ? (
+                        <IconX className="w-5 h-5 text-red-600" />
+                      ) : null}
+                    </span>
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      className="bg-white text-slate-900 placeholder-slate-400 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 flex-1 w-full"
+                      placeholder="Email"
+                      value={email}
+                      onChange={onEmailChange}
+                      aria-invalid={
+                        emailValid === false || emailTaken ? "true" : "false"
+                      }
+                    />
+                    <span className="absolute inset-y-0 right-2 flex items-center justify-center w-5">
+                      {emailChecking ? (
+                        <IconSpinner className="w-5 h-5 animate-spin text-slate-400" />
+                      ) : emailValid && !emailTaken ? (
+                        <IconCheck className="w-5 h-5 text-green-600" />
+                      ) : emailValid === false || emailTaken ? (
+                        <IconX className="w-5 h-5 text-red-600" />
+                      ) : null}
+                    </span>
+                  </div>
+
+                  {waValid === false && (
+                    <p className="text-xs text-red-600 -mt-2">
+                      Número inválido. Si no pones indicativo, agregamos +57
+                      automáticamente.
+                    </p>
+                  )}
+                  {emailValid === false && (
+                    <p className="text-xs text-red-600 -mt-2">
+                      Correo inválido. Ej: nombre@dominio.com
+                    </p>
+                  )}
+                  {emailValid && emailTaken && (
+                    <p className="text-xs text-amber-600 -mt-2">
+                      Ya existe un perfil con este correo. Puedes continuar si
+                      es intencional.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </section>
+            <hr className="my-4 border-t-1 border-gray-200" />
+
+            {/* ====== PASO 2 ====== */}
+            <section>
+              <div className="mb-3 flex items-center gap-3">
+                <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-[#FFC700]">
+                  PASO 2
+                </span>
+                <h2 className="text-base font-semibold text-[#333]">
+                  Bio y otros datos
+                </h2>
+              </div>
+
+              <textarea
+                className="bg-white text-slate-900 placeholder-slate-400 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 w-full"
+                rows={3}
+                placeholder="Mini bio (opcional)"
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
               />
-            ) : waValid === false ? (
-              <IconX className="w-5 h-5 text-red-600" aria-label="inválido" />
-            ) : null}
-          </span>
-        </div>
-        {waValid === false && (
-          <p className="text-xs text-red-600 mt-1">
-            Número inválido. Si no pones indicativo, agregamos +57
-            automáticamente.
-          </p>
-        )}
-      </div>
 
-      {/* Email */}
-      <div>
-        <div className="flex items-center gap-2">
-          <input
-            type="email"
-            autoComplete="email"
-            className="border rounded p-2 flex-1"
-            placeholder="Email"
-            value={email}
-            onChange={onEmailChange}
-            aria-invalid={emailValid === false || emailTaken ? "true" : "false"}
-          />
-        </div>
-        <div className="flex items-center gap-2 h-5">
-          {emailChecking ? (
-            <IconSpinner className="w-5 h-5 animate-spin text-gray-400" />
-          ) : emailValid && !emailTaken ? (
-            <IconCheck className="w-5 h-5 text-green-600" />
-          ) : emailValid === false || emailTaken ? (
-            <IconX className="w-5 h-5 text-red-600" />
-          ) : null}
-        </div>
-        {emailValid === false && (
-          <p className="text-xs text-red-600 mt-1">
-            Correo inválido. Ej: nombre@dominio.com
-          </p>
-        )}
-        {emailValid && emailTaken && (
-          <p className="text-xs text-amber-600 mt-1">
-            Ya existe un perfil con este correo. Puedes continuar si es
-            intencional.
-          </p>
-        )}
-      </div>
+              {/* Extras dinámicos */}
+              <div className="mt-4 space-y-2">
+                <label className="text-sm block text-slate-800">
+                  Otros datos (máx. 3)
+                </label>
 
-      {/* Mini bio */}
-      <textarea
-        className="border rounded p-2 w-full"
-        rows={3}
-        placeholder="Mini bio (opcional)"
-        value={bio}
-        onChange={(e) => setBio(e.target.value)}
-      />
+                {extras.map((row) => {
+                  const usedInOthers = new Set(
+                    extras
+                      .filter((e) => e.id !== row.id && e.kind !== "otro")
+                      .map((e) => e.kind as any)
+                  );
 
-      {/* Foto */}
-      <div className="space-y-3">
-        {/* 1 línea: label + botones */}
-        <div className="flex items-center gap-3">
-          <span className="text-sm">Foto (opcional)</span>
+                  return (
+                    <div
+                      key={row.id}
+                      className="grid grid-cols-12 gap-2 items-center"
+                    >
+                      <select
+                        className="bg-white text-slate-900 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 col-span-4"
+                        value={row.kind}
+                        onChange={(e) =>
+                          updateExtra(row.id, { kind: e.target.value as any })
+                        }
+                      >
+                        {UNIQUE_KINDS.map((k) => (
+                          <option
+                            key={k}
+                            value={k}
+                            disabled={usedInOthers.has(k)}
+                          >
+                            {KIND_LABEL[k]}
+                          </option>
+                        ))}
+                        <option value="otro">Otro</option>
+                      </select>
 
-          {/* Subir foto: SIEMPRE visible */}
-          <label className="border rounded px-3 py-2 cursor-pointer">
-            Subir foto
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={onFileSelect}
-            />
-          </label>
+                      {row.kind === "otro" && (
+                        <input
+                          className="bg-white text-slate-900 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 col-span-3"
+                          placeholder="Etiqueta (ej: Cargo)"
+                          value={row.label}
+                          onChange={(e) =>
+                            updateExtra(row.id, { label: e.target.value })
+                          }
+                        />
+                      )}
 
-          {/* Tomar foto: SOLO en móvil -> abre la app de cámara */}
-          {isMobile && (
-            <>
-              <button
-                type="button"
-                className="border rounded px-3 py-2"
-                onClick={triggerNativeCamera}
-              >
-                Tomar foto
-              </button>
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment" // cámara trasera (usar "user" para frontal)
-                className="hidden"
-                onChange={onCameraCaptureChange}
-              />
-            </>
-          )}
+                      <input
+                        className={`bg-white text-slate-900 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 ${
+                          row.kind === "otro" ? "col-span-4" : "col-span-7"
+                        }`}
+                        placeholder={
+                          row.kind === "direccion"
+                            ? "Tu dirección"
+                            : row.kind === "instagram"
+                            ? "@usuario"
+                            : row.kind === "facebook"
+                            ? "usuario o URL"
+                            : row.kind === "tiktok"
+                            ? "@usuario"
+                            : row.kind === "x"
+                            ? "@usuario"
+                            : "Valor"
+                        }
+                        value={row.value}
+                        onChange={(e) =>
+                          updateExtra(row.id, { value: e.target.value })
+                        }
+                      />
 
-          {photoDataUrl && (
-            <button
-              type="button"
-              className="ml-auto text-sm underline"
-              onClick={() => setPhotoDataUrl(null)}
-            >
-              Quitar foto
-            </button>
-          )}
-        </div>
+                      <button
+                        type="button"
+                        className="rounded-xl px-3 py-2 col-span-1 bg-white text-slate-800 ring-1 ring-black/10 hover:bg-slate-50"
+                        onClick={() => removeExtra(row.id)}
+                        aria-label="Eliminar"
+                        title="Eliminar"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
 
-        {/* Vista previa (si hay foto) */}
-        {photoDataUrl && (
-          <img
-            src={photoDataUrl}
-            alt="preview"
-            className="w-32 h-32 object-cover rounded-full border"
-          />
-        )}
-      </div>
+                <button
+                  type="button"
+                  className="w-full rounded-xl border-2 border-dashed py-3 font-medium text-slate-800 hover:bg-white/60"
+                  onClick={addExtra}
+                  disabled={!canAddExtra}
+                >
+                  {canAddExtra
+                    ? "Agregar otros datos"
+                    : "Límite de 3 alcanzado"}
+                </button>
+              </div>
+            </section>
+            <hr className="my-4 border-t-1 border-gray-200" />
+            {/* ====== PASO 3 ====== */}
+            <section>
+              <div className="mb-3 flex items-center gap-3">
+                <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-[#FFC700]">
+                  PASO 3
+                </span>
+                <h2 className="text-base font-semibold text-[#333]">
+                  Foto y diseño
+                </h2>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4 space-y-3">
+                {/* 1 línea: subir / tomar (móvil) */}
+                <div className="flex items-center gap-3">
+                  {/* Subir desde galería/archivos */}
+                  <label className="rounded-xl px-3 py-2 cursor-pointer bg-white text-slate-800 ring-1 ring-black/10 hover:bg-slate-50">
+                    Subir foto
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={onFileSelect}
+                    />
+                  </label>
 
-      {/* Extras */}
-      <div className="space-y-2">
-        <label className="text-sm block">Otros datos (máx. 3)</label>
+                  {/* Tomar foto: abre cámara nativa solo en móvil */}
+                  {isMobile && (
+                    <>
+                      <button
+                        type="button"
+                        className="rounded-xl px-3 py-2 bg-white text-slate-800 ring-1 ring-black/10 hover:bg-slate-50"
+                        onClick={() => fileCamRef.current?.click()}
+                      >
+                        Tomar foto
+                      </button>
+                      <input
+                        ref={fileCamRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={onFileSelect}
+                      />
+                    </>
+                  )}
 
-        {extras.map((row) => {
-          const usedInOthers = new Set(
-            extras
-              .filter((e) => e.id !== row.id && e.kind !== "otro")
-              .map((e) => e.kind as Exclude<ExtraKind, "otro">)
-          );
+                  {photoDataUrl && (
+                    <button
+                      type="button"
+                      className="ml-auto text-sm underline text-slate-700"
+                      onClick={() => setPhotoDataUrl(null)}
+                    >
+                      Quitar foto
+                    </button>
+                  )}
+                </div>
 
-          return (
-            <div key={row.id} className="grid grid-cols-12 gap-2 items-center">
-              <select
-                className="border rounded p-2 col-span-4"
-                value={row.kind}
-                onChange={(e) =>
-                  updateExtra(row.id, { kind: e.target.value as ExtraKind })
-                }
-              >
-                {UNIQUE_KINDS.map((k) => (
-                  <option
-                    key={k}
-                    value={k}
-                    disabled={usedInOthers.has(k as any)}
+                {photoDataUrl && (
+                  <img
+                    src={photoDataUrl}
+                    alt="preview"
+                    className="mt-3 w-32 h-32 object-cover rounded-full border border-white/60 shadow-sm"
+                  />
+                )}
+
+                <div className="mt-4">
+                  <label className="text-sm block mb-1 text-slate-800">
+                    Diseño de tarjeta
+                  </label>
+                  <select
+                    className="bg-white text-slate-900 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 w-full"
+                    value={layout}
+                    onChange={(e) => setLayout(e.target.value as any)}
                   >
-                    {KIND_LABEL[k]}
-                  </option>
-                ))}
-                <option value="otro">Otro</option>
-              </select>
+                    {LAYOUTS.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              {row.kind === "otro" && (
-                <input
-                  className="border rounded p-2 col-span-3"
-                  placeholder="Etiqueta (ej: Cargo)"
-                  value={row.label}
-                  onChange={(e) =>
-                    updateExtra(row.id, { label: e.target.value })
-                  }
-                />
-              )}
-
-              <input
-                className={`border rounded p-2 ${
-                  row.kind === "otro" ? "col-span-4" : "col-span-7"
-                }`}
-                placeholder={
-                  row.kind === "direccion"
-                    ? "Tu dirección"
-                    : row.kind === "instagram"
-                    ? "@usuario"
-                    : row.kind === "facebook"
-                    ? "usuario o URL"
-                    : row.kind === "tiktok"
-                    ? "@usuario"
-                    : row.kind === "x"
-                    ? "@usuario"
-                    : "Valor"
-                }
-                value={row.value}
-                onChange={(e) => updateExtra(row.id, { value: e.target.value })}
-              />
-
-              <button
-                type="button"
-                className="border rounded px-3 py-2 col-span-1"
-                onClick={() => removeExtra(row.id)}
-                aria-label="Eliminar"
-                title="Eliminar"
-              >
-                ✕
-              </button>
-            </div>
-          );
-        })}
-
-        <button
-          type="button"
-          className="w-full rounded-xl border-2 border-dashed py-3 font-medium"
-          onClick={addExtra}
-          disabled={!canAddExtra}
-        >
-          {canAddExtra ? "Agregar otros datos" : "Límite de 3 alcanzado"}
-        </button>
-      </div>
-
-      {/* Diseño + colores */}
-      <div>
-        <label className="text-sm block mb-1">Diseño de tarjeta</label>
-        <select
-          className="border rounded p-2 w-full"
-          value={layout}
-          onChange={(e) => setLayout(e.target.value as TemplateLayout)}
-        >
-          {LAYOUTS.map((l) => (
-            <option key={l} value={l}>
-              {l}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-sm block mb-1">Color primario</label>
-          <input
-            type="color"
-            className="h-10 w-full p-1 border rounded"
-            value={primary}
-            onChange={(e) => setPrimary(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="text-sm block mb-1">Color acento</label>
-          <input
-            type="color"
-            className="h-10 w-full p-1 border rounded"
-            value={accent}
-            onChange={(e) => setAccent(e.target.value)}
-          />
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm block mb-1 text-slate-800">
+                      Color primario
+                    </label>
+                    <input
+                      type="color"
+                      className="h-10 w-full p-1 bg-white rounded-xl ring-1 ring-black/10"
+                      value={primary}
+                      onChange={(e) => setPrimary(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm block mb-1 text-slate-800">
+                      Color acento
+                    </label>
+                    <input
+                      type="color"
+                      className="h-10 w-full p-1 bg-white rounded-xl ring-1 ring-black/10"
+                      value={accent}
+                      onChange={(e) => setAccent(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </section>
+          </form>
         </div>
       </div>
 
-      <button
-        disabled={!canSubmit}
-        className="w-full rounded-2xl py-3 font-semibold text-white disabled:opacity-50"
-        style={{ background: primary }}
-      >
-        Guardar y activar
-      </button>
-    </form>
+      {/* Barra inferior (siempre debajo de la tarjeta) */}
+      <div className="w-full bg-[#000]/80 backdrop-blur-sm">
+        <div className="mx-auto max-w-2xl px-4 py-3 flex gap-3">
+          <button
+            type="submit"
+            form="claimForm"
+            disabled={!canSubmit || saving}
+            className="flex-1 rounded-full bg-[#FFC62E] text-black py-3 font-semibold shadow-[inset_0_-2px_0_rgba(0,0,0,.18)] disabled:opacity-50 hover:brightness-105"
+            onClick={(e) => {
+              // este botón sigue siendo visual; el submit lo maneja el form
+            }}
+          >
+            {saving ? "Guardando..." : "Guardar y activar"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

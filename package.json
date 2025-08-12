@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "gen:codes": "tsx --env-file=.env.local src/scripts/generate-codes.ts",
-    "gen:qrs": "tsx --env-file=.env.local src/scripts/generate-qrs.ts"
+    "gen:qrs": "tsx --env-file=.env.local src/scripts/generate-qrs.ts",
+    "tunnel:ngrok": "pnpm dlx ngrok http 3000"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.54.0",
