@@ -16,15 +16,6 @@ function sanitizeTelInput(raw: string) {
   else s = s.replace(/\+/g, "");
   return s;
 }
-function capitalizeWords(str: string) {
-  if (!str) return "";
-  return str
-    .toLowerCase()
-    .split(" ")
-    .filter((word) => word.trim() !== "")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
 
 function applyGroups(d: string, groups: number[], sep = "-") {
   const out: string[] = [];
@@ -176,7 +167,8 @@ export default function ClaimForm({ code }: { code: string }) {
   const canAddExtra = extras.length < 3;
 
   // refs
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const fileCamRef = useRef<HTMLInputElement>(null); // para abrir cámara nativa (móvil)
 
   // heurística móvil
   useEffect(() => {
@@ -322,6 +314,7 @@ export default function ClaimForm({ code }: { code: string }) {
       if (!valid) {
         alert("WhatsApp no es válido");
         setStep(1);
+        setSaving(false);
         return;
       }
       const emailLower = (email || "").trim().toLowerCase();
@@ -364,7 +357,6 @@ export default function ClaimForm({ code }: { code: string }) {
       });
       const json = await res.json();
       if (json?.ok && json?.slug) {
-        // redirige y no volvemos a poner saving=false (el navegador cambia)
         window.location.href = `/${json.slug}`;
       } else {
         alert(json?.error || "No se pudo reclamar el código.");
@@ -387,398 +379,396 @@ export default function ClaimForm({ code }: { code: string }) {
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="max-w-lg mx-auto p-4 space-y-4"
-      aria-busy={saving}
-    >
-      {/* banner de guardado */}
-      {saving && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-blue-600 text-white text-sm py-2 px-4 flex items-center gap-2 justify-center">
-          <IconSpinner className="w-4 h-4 animate-spin" />
-          Guardando tu WOWKard…
-        </div>
-      )}
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-[#ffbb00] to-[#ffc833]">
+      {/* Contenedor central */}
+      <div className="w-full mx-auto max-w-2xl px-4 pt-8 pb-2">
+        <h1 className="text-[#23242a] text-3xl font-black mb-6 text-center tracking-[-0.05em]">
+          Crea tu WOW kard
+        </h1>
+        {/* Tarjeta que ocupa (casi) todo el alto visible */}
+        <div className="bg-white rounded-2xl shadow-xl min-h-[calc(100vh-160px)] p-4 sm:p-6">
+          {/* Formulario */}
+          <form
+            ref={formRef}
+            onSubmit={onSubmit}
+            className="flex flex-col gap-6"
+          >
+            {/* ====== PASO 1 ====== */}
+            <section>
+              <div className="mb-3 flex items-center gap-3">
+                <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-[#FFC700]">
+                  PASO 1
+                </span>
+                <h2 className="text-base font-semibold text-[#333]">
+                  Datos básicos
+                </h2>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4 space-y-3">
+                {/* Nombre / Apellido */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    className="bg-white text-slate-900 placeholder-slate-400 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50"
+                    placeholder="Nombre"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                  <input
+                    className="bg-white text-slate-900 placeholder-slate-400 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50"
+                    placeholder="Apellido"
+                    value={last}
+                    onChange={(e) => setLast(e.target.value)}
+                  />
+                </div>
 
-      <h1 className="text-xl font-semibold text-center">
-        Activar tu WOWKard ({code})
-      </h1>
+                {/* URL (slug) en una línea */}
+                {/* URL (slug) en dos líneas, responsive */}
+                <div className="mt-3 text-sm">
+                  {/* Línea 1 */}
+                  <div className="text-slate-700 mb-1 text-center">
+                    Tu URL sería:{" "}
+                    <span className="whitespace-nowrap text-slate-700">
+                      https://mi.wowkard.es/
+                    </span>
+                  </div>
 
-      {/* barra de pasos */}
-      <div className="flex items-center justify-center gap-2">
-        {[1, 2, 3].map((n) => (
-          <div
-            key={n}
-            className={`h-2 rounded-full transition-all ${
-              step >= n ? "bg-blue-600" : "bg-gray-300"
-            } ${"w-24"}`}
-          />
-        ))}
-      </div>
+                  {/* Línea 2: prefijo fijo + input flexible + icono absoluto */}
+                  <div className="flex items-center gap-2">
+                    <span className="whitespace-nowrap text-slate-700"></span>
 
-      {/* PASO 1 */}
-      {step === 1 && (
-        <section className="space-y-4 opacity-100">
-          <h2 className="font-medium text-sm uppercase tracking-wide text-gray-600">
-            Paso 1 · Datos básicos
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              className="border rounded p-2"
-              placeholder="Nombre"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={saving}
-            />
-            <input
-              className="border rounded p-2"
-              placeholder="Apellido"
-              value={last}
-              onChange={(e) => setLast(e.target.value)}
-              disabled={saving}
-            />
-          </div>
+                    <div className="relative flex-1 min-w-0">
+                      <input
+                        className="bg-white text-slate-900 placeholder-[#cccccd] rounded-lg px-2 py-1 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 w-full pr-7 text-center"
+                        value={slug}
+                        onChange={onSlugChange}
+                        onBlur={() => setSlug(normalizeSlug(slug))}
+                        aria-label="Slug"
+                      />
+                      {/* Icono superpuesto a la derecha */}
+                      <span className="absolute inset-y-0 right-1 flex items-center justify-center w-5">
+                        {checkingSlug ? (
+                          <IconSpinner className="w-5 h-5 animate-spin text-slate-400" />
+                        ) : slug && slugOk === true ? (
+                          <IconCheck className="w-5 h-5 text-green-600" />
+                        ) : slug && slugOk === false ? (
+                          <IconX className="w-5 h-5 text-red-600" />
+                        ) : null}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-          <div className="flex items-center gap-2 text-sm">
-            <span className="whitespace-nowrap">Tu URL: mi.wowkard.es/</span>
-            <input
-              className="border rounded px-2 py-1 w-56"
-              value={slug}
-              onChange={onSlugChange}
-              onBlur={() => setSlug(normalizeSlug(slug))}
-              aria-label="Slug"
-              disabled={saving}
-            />
-            <span className="inline-flex items-center justify-center w-5 h-5">
-              {checkingSlug ? (
-                <IconSpinner className="w-5 h-5 animate-spin text-gray-400" />
-              ) : slug && slugOk === true ? (
-                <IconCheck className="w-5 h-5 text-green-600" />
-              ) : slug && slugOk === false ? (
-                <IconX className="w-5 h-5 text-red-600" />
-              ) : null}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              className="border rounded p-2 flex-1"
-              placeholder="WhatsApp"
-              value={waDisplay}
-              onChange={onWhatsappChange}
-              onBlur={onWhatsappBlur}
-              onPaste={(e) =>
-                handleTelPaste(e, setWhatsapp, setWaDisplay, setWaValid)
-              }
-              inputMode="tel"
-              autoComplete="tel"
-              pattern="^\\+?\\d(?:[ -]?\\d)*$"
-              aria-label="WhatsApp"
-              disabled={saving}
-            />
-            <span className="inline-flex items-center justify-center w-5 h-5">
-              {waValid === true ? (
-                <IconCheck className="w-5 h-5 text-green-600" />
-              ) : waValid === false ? (
-                <IconX className="w-5 h-5 text-red-600" />
-              ) : null}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="email"
-              autoComplete="email"
-              className="border rounded p-2 flex-1"
-              placeholder="Email"
-              value={email}
-              onChange={onEmailChange}
-              aria-invalid={
-                emailValid === false || emailTaken ? "true" : "false"
-              }
-              disabled={saving}
-            />
-            <span className="inline-flex items-center justify-center w-5 h-5">
-              {emailChecking ? (
-                <IconSpinner className="w-5 h-5 animate-spin text-gray-400" />
-              ) : emailValid && !emailTaken ? (
-                <IconCheck className="w-5 h-5 text-green-600" />
-              ) : emailValid === false || emailTaken ? (
-                <IconX className="w-5 h-5 text-red-600" />
-              ) : null}
-            </span>
-          </div>
-          {emailValid === false && (
-            <p className="text-xs text-red-600">
-              Correo inválido. Ej: nombre@dominio.com
-            </p>
-          )}
-          {emailValid && emailTaken && (
-            <p className="text-xs text-amber-600">
-              Este correo ya existe; puedes continuar si es intencional.
-            </p>
-          )}
-
-          <div className="pt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              disabled={!step1Ok || saving}
-              className="flex-1 rounded-xl py-3 font-semibold text-white disabled:opacity-50"
-              style={{ background: step1Ok && !saving ? "#0A66FF" : "#9CA3AF" }}
-            >
-              Siguiente
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* PASO 2 */}
-      {step === 2 && (
-        <section className="space-y-4">
-          <h2 className="font-medium text-sm uppercase tracking-wide text-gray-600">
-            Paso 2 · Bio y campos extra
-          </h2>
-          <textarea
-            className="border rounded p-2 w-full"
-            rows={3}
-            placeholder="Mini bio (opcional)"
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            disabled={saving}
-          />
-
-          <div className="space-y-2">
-            <label className="text-sm block">Otros datos (máx. 3)</label>
-            {extras.map((row) => {
-              const usedInOthers = new Set(
-                extras
-                  .filter((e) => e.id !== row.id && e.kind !== "otro")
-                  .map((e) => e.kind as Exclude<ExtraKind, "otro">)
-              );
-              return (
-                <div
-                  key={row.id}
-                  className="grid grid-cols-12 gap-2 items-center"
-                >
-                  <select
-                    className="border rounded p-2 col-span-4"
-                    value={row.kind}
-                    disabled={saving}
-                    onChange={(e) =>
-                      updateExtra(row.id, { kind: e.target.value as ExtraKind })
-                    }
-                  >
-                    {UNIQUE_KINDS.map((k) => (
-                      <option
-                        key={k}
-                        value={k}
-                        disabled={usedInOthers.has(k as any)}
-                      >
-                        {KIND_LABEL[k]}
-                      </option>
-                    ))}
-                    <option value="otro">Otro</option>
-                  </select>
-
-                  {row.kind === "otro" && (
+                {/* WhatsApp + Email */}
+                <div className="mt-3 grid grid-cols-1 gap-3">
+                  <div className="relative">
                     <input
-                      className="border rounded p-2 col-span-3"
-                      placeholder="Etiqueta (ej: Cargo)"
-                      value={row.label}
-                      onChange={(e) =>
-                        updateExtra(row.id, { label: e.target.value })
+                      className="bg-white text-[#24262b] placeholder-[#cccccd] rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 flex-1 w-full"
+                      placeholder="WhatsApp"
+                      value={waDisplay}
+                      onChange={onWhatsappChange}
+                      onBlur={onWhatsappBlur}
+                      onPaste={(e) =>
+                        handleTelPaste(e, setWhatsapp, setWaDisplay, setWaValid)
                       }
-                      disabled={saving}
+                      inputMode="tel"
+                      autoComplete="tel"
+                      pattern="^\\+?\\d(?:[ -]?\\d)*$"
+                      aria-label="WhatsApp"
                     />
+                    <span className="absolute inset-y-0 right-1 flex items-center justify-center w-5">
+                      {waValid === true ? (
+                        <IconCheck className="w-5 h-5 text-green-600" />
+                      ) : waValid === false ? (
+                        <IconX className="w-5 h-5 text-red-600" />
+                      ) : null}
+                    </span>
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      className="bg-white text-slate-900 placeholder-slate-400 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 flex-1 w-full"
+                      placeholder="Email"
+                      value={email}
+                      onChange={onEmailChange}
+                      aria-invalid={
+                        emailValid === false || emailTaken ? "true" : "false"
+                      }
+                    />
+                    <span className="absolute inset-y-0 right-2 flex items-center justify-center w-5">
+                      {emailChecking ? (
+                        <IconSpinner className="w-5 h-5 animate-spin text-slate-400" />
+                      ) : emailValid && !emailTaken ? (
+                        <IconCheck className="w-5 h-5 text-green-600" />
+                      ) : emailValid === false || emailTaken ? (
+                        <IconX className="w-5 h-5 text-red-600" />
+                      ) : null}
+                    </span>
+                  </div>
+
+                  {waValid === false && (
+                    <p className="text-xs text-red-600 -mt-2">
+                      Número inválido. Si no pones indicativo, agregamos +57
+                      automáticamente.
+                    </p>
+                  )}
+                  {emailValid === false && (
+                    <p className="text-xs text-red-600 -mt-2">
+                      Correo inválido. Ej: nombre@dominio.com
+                    </p>
+                  )}
+                  {emailValid && emailTaken && (
+                    <p className="text-xs text-amber-600 -mt-2">
+                      Ya existe un perfil con este correo. Puedes continuar si
+                      es intencional.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </section>
+            <hr className="my-4 border-t-1 border-gray-200" />
+
+            {/* ====== PASO 2 ====== */}
+            <section>
+              <div className="mb-3 flex items-center gap-3">
+                <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-[#FFC700]">
+                  PASO 2
+                </span>
+                <h2 className="text-base font-semibold text-[#333]">
+                  Bio y otros datos
+                </h2>
+              </div>
+
+              <textarea
+                className="bg-white text-slate-900 placeholder-slate-400 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 w-full"
+                rows={3}
+                placeholder="Mini bio (opcional)"
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+              />
+
+              {/* Extras dinámicos */}
+              <div className="mt-4 space-y-2">
+                <label className="text-sm block text-slate-800">
+                  Otros datos (máx. 3)
+                </label>
+
+                {extras.map((row) => {
+                  const usedInOthers = new Set(
+                    extras
+                      .filter((e) => e.id !== row.id && e.kind !== "otro")
+                      .map((e) => e.kind as any)
+                  );
+
+                  return (
+                    <div
+                      key={row.id}
+                      className="grid grid-cols-12 gap-2 items-center"
+                    >
+                      <select
+                        className="bg-white text-slate-900 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 col-span-4"
+                        value={row.kind}
+                        onChange={(e) =>
+                          updateExtra(row.id, { kind: e.target.value as any })
+                        }
+                      >
+                        {UNIQUE_KINDS.map((k) => (
+                          <option
+                            key={k}
+                            value={k}
+                            disabled={usedInOthers.has(k)}
+                          >
+                            {KIND_LABEL[k]}
+                          </option>
+                        ))}
+                        <option value="otro">Otro</option>
+                      </select>
+
+                      {row.kind === "otro" && (
+                        <input
+                          className="bg-white text-slate-900 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 col-span-3"
+                          placeholder="Etiqueta (ej: Cargo)"
+                          value={row.label}
+                          onChange={(e) =>
+                            updateExtra(row.id, { label: e.target.value })
+                          }
+                        />
+                      )}
+
+                      <input
+                        className={`bg-white text-slate-900 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 ${
+                          row.kind === "otro" ? "col-span-4" : "col-span-7"
+                        }`}
+                        placeholder={
+                          row.kind === "direccion"
+                            ? "Tu dirección"
+                            : row.kind === "instagram"
+                            ? "@usuario"
+                            : row.kind === "facebook"
+                            ? "usuario o URL"
+                            : row.kind === "tiktok"
+                            ? "@usuario"
+                            : row.kind === "x"
+                            ? "@usuario"
+                            : "Valor"
+                        }
+                        value={row.value}
+                        onChange={(e) =>
+                          updateExtra(row.id, { value: e.target.value })
+                        }
+                      />
+
+                      <button
+                        type="button"
+                        className="rounded-xl px-3 py-2 col-span-1 bg-white text-slate-800 ring-1 ring-black/10 hover:bg-slate-50"
+                        onClick={() => removeExtra(row.id)}
+                        aria-label="Eliminar"
+                        title="Eliminar"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  className="w-full rounded-xl border-2 border-dashed py-3 font-medium text-slate-800 hover:bg-white/60"
+                  onClick={addExtra}
+                  disabled={!canAddExtra}
+                >
+                  {canAddExtra
+                    ? "Agregar otros datos"
+                    : "Límite de 3 alcanzado"}
+                </button>
+              </div>
+            </section>
+            <hr className="my-4 border-t-1 border-gray-200" />
+            {/* ====== PASO 3 ====== */}
+            <section>
+              <div className="mb-3 flex items-center gap-3">
+                <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-[#FFC700]">
+                  PASO 3
+                </span>
+                <h2 className="text-base font-semibold text-[#333]">
+                  Foto y diseño
+                </h2>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4 space-y-3">
+                {/* 1 línea: subir / tomar (móvil) */}
+                <div className="flex items-center gap-3">
+                  {/* Subir desde galería/archivos */}
+                  <label className="rounded-xl px-3 py-2 cursor-pointer bg-white text-slate-800 ring-1 ring-black/10 hover:bg-slate-50">
+                    Subir foto
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={onFileSelect}
+                    />
+                  </label>
+
+                  {/* Tomar foto: abre cámara nativa solo en móvil */}
+                  {isMobile && (
+                    <>
+                      <button
+                        type="button"
+                        className="rounded-xl px-3 py-2 bg-white text-slate-800 ring-1 ring-black/10 hover:bg-slate-50"
+                        onClick={() => fileCamRef.current?.click()}
+                      >
+                        Tomar foto
+                      </button>
+                      <input
+                        ref={fileCamRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={onFileSelect}
+                      />
+                    </>
                   )}
 
-                  <input
-                    className={`border rounded p-2 ${
-                      row.kind === "otro" ? "col-span-4" : "col-span-7"
-                    }`}
-                    placeholder={
-                      row.kind === "direccion"
-                        ? "Tu dirección"
-                        : row.kind === "instagram" ||
-                          row.kind === "tiktok" ||
-                          row.kind === "x"
-                        ? "@usuario"
-                        : row.kind === "facebook"
-                        ? "usuario o URL"
-                        : "Valor"
-                    }
-                    value={row.value}
-                    onChange={(e) =>
-                      updateExtra(row.id, { value: e.target.value })
-                    }
-                    disabled={saving}
-                  />
-
-                  <button
-                    type="button"
-                    className="border rounded px-3 py-2 col-span-1"
-                    onClick={() => removeExtra(row.id)}
-                    disabled={saving}
-                    aria-label="Eliminar"
-                    title="Eliminar"
-                  >
-                    ✕
-                  </button>
+                  {photoDataUrl && (
+                    <button
+                      type="button"
+                      className="ml-auto text-sm underline text-slate-700"
+                      onClick={() => setPhotoDataUrl(null)}
+                    >
+                      Quitar foto
+                    </button>
+                  )}
                 </div>
-              );
-            })}
 
-            <button
-              type="button"
-              className="w-full rounded-xl border-2 border-dashed py-3 font-medium"
-              onClick={addExtra}
-              disabled={!canAddExtra || saving}
-            >
-              {canAddExtra ? "Agregar otros datos" : "Límite de 3 alcanzado"}
-            </button>
-          </div>
+                {photoDataUrl && (
+                  <img
+                    src={photoDataUrl}
+                    alt="preview"
+                    className="mt-3 w-32 h-32 object-cover rounded-full border border-white/60 shadow-sm"
+                  />
+                )}
 
-          <div className="pt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="flex-1 rounded-xl py-3 font-semibold border"
-              disabled={saving}
-            >
-              Volver
-            </button>
-            <button
-              type="button"
-              onClick={() => setStep(3)}
-              className="flex-1 rounded-xl py-3 font-semibold text-white"
-              style={{ background: "#0A66FF" }}
-              disabled={saving}
-            >
-              Siguiente
-            </button>
-          </div>
-        </section>
-      )}
+                <div className="mt-4">
+                  <label className="text-sm block mb-1 text-slate-800">
+                    Diseño de tarjeta
+                  </label>
+                  <select
+                    className="bg-white text-slate-900 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 w-full"
+                    value={layout}
+                    onChange={(e) => setLayout(e.target.value as any)}
+                  >
+                    {LAYOUTS.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-      {/* PASO 3 */}
-      {step === 3 && (
-        <section className="space-y-4">
-          <h2 className="font-medium text-sm uppercase tracking-wide text-gray-600">
-            Paso 3 · Foto y diseño
-          </h2>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm block mb-1 text-slate-800">
+                      Color primario
+                    </label>
+                    <input
+                      type="color"
+                      className="h-10 w-full p-1 bg-white rounded-xl ring-1 ring-black/10"
+                      value={primary}
+                      onChange={(e) => setPrimary(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm block mb-1 text-slate-800">
+                      Color acento
+                    </label>
+                    <input
+                      type="color"
+                      className="h-10 w-full p-1 bg-white rounded-xl ring-1 ring-black/10"
+                      value={accent}
+                      onChange={(e) => setAccent(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </section>
+          </form>
+        </div>
+      </div>
 
-          <div className="flex items-center gap-3">
-            <span className="text-sm">Foto (opcional)</span>
-            <label className="border rounded px-3 py-2 cursor-pointer">
-              Subir foto
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={onFileSelect}
-                ref={fileInputRef}
-                disabled={saving}
-              />
-            </label>
-            {isMobile && (
-              <label className="border rounded px-3 py-2 cursor-pointer">
-                Tomar foto
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={onFileSelect}
-                  disabled={saving}
-                />
-              </label>
-            )}
-            {photoDataUrl && (
-              <button
-                type="button"
-                className="ml-auto text-sm underline"
-                onClick={() => setPhotoDataUrl(null)}
-                disabled={saving}
-              >
-                Quitar foto
-              </button>
-            )}
-          </div>
-
-          {photoDataUrl && (
-            <img
-              src={photoDataUrl}
-              alt="preview"
-              className="w-32 h-32 object-cover rounded-full border"
-            />
-          )}
-
-          <div>
-            <label className="text-sm block mb-1">Diseño de tarjeta</label>
-            <select
-              className="border rounded p-2 w-full"
-              value={layout}
-              onChange={(e) => setLayout(e.target.value as TemplateLayout)}
-              disabled={saving}
-            >
-              {LAYOUTS.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm block mb-1">Color primario</label>
-              <input
-                type="color"
-                className="h-10 w-full p-1 border rounded"
-                value={primary}
-                onChange={(e) => setPrimary(e.target.value)}
-                disabled={saving}
-              />
-            </div>
-            <div>
-              <label className="text-sm block mb-1">Color acento</label>
-              <input
-                type="color"
-                className="h-10 w-full p-1 border rounded"
-                value={accent}
-                onChange={(e) => setAccent(e.target.value)}
-                disabled={saving}
-              />
-            </div>
-          </div>
-
-          <div className="pt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              className="flex-1 rounded-xl py-3 font-semibold border"
-              disabled={saving}
-            >
-              Volver
-            </button>
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              className="flex-1 rounded-2xl py-3 font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2"
-              style={{ background: primary }}
-            >
-              {saving ? (
-                <>
-                  <IconSpinner className="w-5 h-5 animate-spin" /> Guardando…
-                </>
-              ) : (
-                "Guardar y activar"
-              )}
-            </button>
-          </div>
-        </section>
-      )}
-    </form>
+      {/* Barra inferior (siempre debajo de la tarjeta) */}
+      <div className="w-full bg-[#000]/80 backdrop-blur-sm">
+        <div className="mx-auto max-w-2xl px-4 py-3 flex gap-3">
+          <button
+            disabled={!canSubmit || saving}
+            className="flex-1 rounded-full bg-[#FFC62E] text-black py-3 font-semibold shadow-[inset_0_-2px_0_rgba(0,0,0,.18)] disabled:opacity-50 hover:brightness-105"
+            onClick={(e) => {
+              // este botón sigue siendo visual; el submit lo maneja el form
+            }}
+          >
+            {saving ? "Guardando..." : "Guardar y activar"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
