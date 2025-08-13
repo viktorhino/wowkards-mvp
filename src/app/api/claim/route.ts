@@ -1,114 +1,161 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/server"; // ⚠️ es una función factory
 import { normalizeWhatsapp } from "@/lib/phone";
 import { capitalizeWords } from "@/lib/text";
+import { randomUUID } from "crypto";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const { code, name, last_name, whatsapp, email, slug, template_config } =
+      body ?? {};
 
-    // Campos esperados desde el cliente
-    const {
-      code,
-      name,
-      last_name,
-      whatsapp, // puede venir e164, pero igual lo revalidamos aquí
-      email, // ya viene en minúsculas desde el form
-      slug,
-      template_config, // opcional
-    } = body || {};
-
-    // Validación básica
-    if (!code || !name || !last_name || !slug) {
+    if (!code || typeof code !== "string") {
       return NextResponse.json(
-        { ok: false, error: "Missing fields" },
+        { ok: false, error: "Missing code" },
+        { status: 400 }
+      );
+    }
+    if (!name || !last_name) {
+      return NextResponse.json(
+        { ok: false, error: "Missing name fields" },
+        { status: 400 }
+      );
+    }
+    if (!email || typeof email !== "string") {
+      return NextResponse.json(
+        { ok: false, error: "Missing email" },
+        { status: 400 }
+      );
+    }
+    if (!slug || typeof slug !== "string") {
+      return NextResponse.json(
+        { ok: false, error: "Missing slug" },
+        { status: 400 }
+      );
+    }
+    if (!whatsapp || typeof whatsapp !== "string") {
+      return NextResponse.json(
+        { ok: false, error: "Missing whatsapp" },
         { status: 400 }
       );
     }
 
-    // Normaliza y valida WhatsApp en servidor (fuente de verdad)
-    const { e164: waE164, valid } = normalizeWhatsapp(String(whatsapp || ""));
-    if (!valid) {
-      return NextResponse.json(
-        { ok: false, error: "WhatsApp inválido" },
-        { status: 400 }
-      );
-    }
-
+    // ✅ crea el cliente admin desde la factory
     const admin = supabaseAdmin();
 
-    // 1) Verifica que el code existe y está unclaimed
-    const { data: sc, error: e1 } = await admin
+    // Normalizaciones
+    const nameCap = capitalizeWords(String(name));
+    const lastCap = capitalizeWords(String(last_name));
+    const emailLower = String(email).toLowerCase().trim();
+    const waNorm = normalizeWhatsapp(String(whatsapp));
+    if (!waNorm.valid) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid whatsapp" },
+        { status: 400 }
+      );
+    }
+
+    // 1) Verificar code libre
+    const { data: codeRow, error: codeErr } = await admin
       .from("short_codes")
       .select("*")
       .eq("code", code)
       .maybeSingle();
 
-    if (e1 || !sc || sc.status !== "unclaimed") {
+    if (codeErr) {
+      return NextResponse.json(
+        { ok: false, error: codeErr.message },
+        { status: 500 }
+      );
+    }
+    if (!codeRow) {
+      return NextResponse.json(
+        { ok: false, error: "Code invalid" },
+        { status: 404 }
+      );
+    }
+    if (codeRow.claimed_at || codeRow.claimed === true) {
       return NextResponse.json(
         { ok: false, error: "Code invalid or claimed" },
-        { status: 400 }
+        { status: 409 }
       );
     }
 
-    // 2) Verifica slug libre
-    const { data: existing } = await admin
+    // 2) Verificar slug libre
+    const { data: slugRow, error: slugErr } = await admin
       .from("profiles")
       .select("id")
       .eq("slug", slug)
       .maybeSingle();
 
-    if (existing) {
+    if (slugErr) {
+      return NextResponse.json(
+        { ok: false, error: slugErr.message },
+        { status: 500 }
+      );
+    }
+    if (slugRow) {
       return NextResponse.json(
         { ok: false, error: "Slug taken" },
         { status: 409 }
       );
     }
 
-    // 3) Crea profile (template_config opcional)
-    const cfg =
-      template_config && typeof template_config === "object"
-        ? template_config
-        : {};
-
-    const nameCap = capitalizeWords(name);
-    const lastCap = capitalizeWords(last_name);
-
-    const { error: e2 } = await admin.from("profiles").insert({
+    // 3) Crear profile con edit_token
+    const edit_token = randomUUID();
+    const profilePayload = {
       name: nameCap,
       last_name: lastCap,
-      whatsapp: waE164,
-      email: email || null,
+      whatsapp: waNorm.e164,
+      email: emailLower,
       slug,
-      template_key: "TemplateLinkBio",
-      template_config: cfg,
-    });
+      template_config: template_config ?? {},
+      edit_token,
+      created_via_code: code,
+      status: "active",
+    };
 
-    if (e2) {
+    const { data: newProfile, error: insErr } = await admin
+      .from("profiles")
+      .insert(profilePayload)
+      .select("id, slug, edit_token")
+      .single();
+
+    if (insErr) {
       return NextResponse.json(
-        { ok: false, error: e2.message },
+        { ok: false, error: insErr.message },
         { status: 500 }
       );
     }
 
-    // 4) Actualiza short_code
-    const { error: e3 } = await admin
+    // 4) Marcar el code como reclamado
+
+    const codeNorm = String(code).trim().toLowerCase(); // por si llega en mayúsculas
+
+    const updatePatch = {
+      status: "claimed", // <-- text
+      claimed: true, // <-- bool
+      claimed_at: new Date().toISOString(),
+      slug,
+    };
+
+    const { error: updErr } = await admin
       .from("short_codes")
-      .update({
-        status: "claimed",
-        slug,
-        claimed_at: new Date().toISOString(),
-      })
-      .eq("code", code);
+      .update(updatePatch)
+      .eq("code", codeNorm);
 
-    if (e3) {
-      return NextResponse.json(
-        { ok: false, error: e3.message },
-        { status: 500 }
-      );
+    if (updErr) {
+      // Perfil creado pero fallo marcando el code: no bloquees al usuario
+      return NextResponse.json({
+        ok: true,
+        slug,
+        edit_token,
+        warn: updErr.message,
+      });
     }
 
-    return NextResponse.json({ ok: true, slug });
+    return NextResponse.json({ ok: true, slug, edit_token });
   } catch (err: any) {
     return NextResponse.json(
       { ok: false, error: err?.message || "Server error" },
