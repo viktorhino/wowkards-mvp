@@ -1,164 +1,150 @@
+/* Claim code → crea perfil, sube avatar y marca short_code como usado */
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/server"; // ⚠️ es una función factory
-import { normalizeWhatsapp } from "@/lib/phone";
-import { capitalizeWords } from "@/lib/text";
-import { randomUUID } from "crypto";
+import { createAdminClient } from "@/lib/supabase/admin"; // tu helper service-role
+import { uploadAvatarFromDataUrl } from "@/lib/upload-avatar";
+
+function normalizeCode(code: string) {
+  return String(code || "")
+    .trim()
+    .toLowerCase();
+}
+function safe<T>(v: T | undefined, fallback: T | null = null): T | null {
+  return v === undefined ? fallback : (v as T);
+}
 
 export async function POST(req: Request) {
   try {
+    const admin = createAdminClient();
     const body = await req.json();
-    const { code, name, last_name, whatsapp, email, slug, template_config } =
-      body ?? {};
 
-    if (!code || typeof code !== "string") {
+    // 1) Normaliza inputs y acepta legado (foto dentro de template_config)
+    const {
+      code,
+      slug,
+      name,
+      last_name,
+      position,
+      company,
+
+      whatsapp,
+      email,
+      mini_bio,
+      template_config: tcfgIn,
+      photoDataUrl: photoRoot,
+      ...rest
+    } = body || {};
+
+    const codeNorm = normalizeCode(code);
+    if (!codeNorm) {
       return NextResponse.json(
         { ok: false, error: "Missing code" },
         { status: 400 }
       );
     }
-    if (!name || !last_name) {
-      return NextResponse.json(
-        { ok: false, error: "Missing name fields" },
-        { status: 400 }
-      );
-    }
-    if (!email || typeof email !== "string") {
-      return NextResponse.json(
-        { ok: false, error: "Missing email" },
-        { status: 400 }
-      );
-    }
-    if (!slug || typeof slug !== "string") {
-      return NextResponse.json(
-        { ok: false, error: "Missing slug" },
-        { status: 400 }
-      );
-    }
-    if (!whatsapp || typeof whatsapp !== "string") {
-      return NextResponse.json(
-        { ok: false, error: "Missing whatsapp" },
-        { status: 400 }
-      );
-    }
 
-    // ✅ crea el cliente admin desde la factory
-    const admin = supabaseAdmin();
+    const photoDataUrl: string | null =
+      photoRoot || tcfgIn?.photoDataUrl || tcfgIn?.photo_url || null;
 
-    // Normalizaciones
-    const nameCap = capitalizeWords(String(name));
-    const lastCap = capitalizeWords(String(last_name));
-    const emailLower = String(email).toLowerCase().trim();
-    const waNorm = normalizeWhatsapp(String(whatsapp));
-    if (!waNorm.valid) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid whatsapp" },
-        { status: 400 }
-      );
-    }
+    // limpiamos template_config de posibles fotos base64/urls legadas
+    const template_config = tcfgIn
+      ? { ...tcfgIn, photoDataUrl: undefined, photo_url: undefined }
+      : null;
 
-    // 1) Verificar code libre
-    const { data: codeRow, error: codeErr } = await admin
+    // 2) Valida short_code
+    const { data: sc, error: scErr } = await admin
       .from("short_codes")
-      .select("*")
-      .eq("code", code)
+      .select("code, claimed, status")
+      .eq("code", codeNorm)
       .maybeSingle();
 
-    if (codeErr) {
-      return NextResponse.json(
-        { ok: false, error: codeErr.message },
-        { status: 500 }
-      );
-    }
-    if (!codeRow) {
-      return NextResponse.json(
-        { ok: false, error: "Code invalid" },
-        { status: 404 }
-      );
-    }
-    if (codeRow.claimed_at || codeRow.claimed === true) {
+    if (scErr || !sc || sc.claimed === true || sc.status === "claimed") {
       return NextResponse.json(
         { ok: false, error: "Code invalid or claimed" },
-        { status: 409 }
+        { status: 400 }
       );
     }
 
-    // 2) Verificar slug libre
-    const { data: slugRow, error: slugErr } = await admin
+    // 3) Genera edit_token
+    // @ts-ignore
+    const edit_token: string = (globalThis.crypto?.randomUUID?.() ||
+      Math.random().toString(36).slice(2)) as string;
+
+    // 4) Inserta perfil sin avatar_url (lo subimos luego)
+    const { data: inserted, error: insErr } = await admin
       .from("profiles")
-      .select("id")
-      .eq("slug", slug)
-      .maybeSingle();
-
-    if (slugErr) {
-      return NextResponse.json(
-        { ok: false, error: slugErr.message },
-        { status: 500 }
-      );
-    }
-    if (slugRow) {
-      return NextResponse.json(
-        { ok: false, error: "Slug taken" },
-        { status: 409 }
-      );
-    }
-
-    // 3) Crear profile con edit_token
-    const edit_token = randomUUID();
-    const profilePayload = {
-      name: nameCap,
-      last_name: lastCap,
-      whatsapp: waNorm.e164,
-      email: emailLower,
-      slug,
-      template_config: template_config ?? {},
-      edit_token,
-      created_via_code: code,
-      status: "active",
-    };
-
-    const { data: newProfile, error: insErr } = await admin
-      .from("profiles")
-      .insert(profilePayload)
+      .insert({
+        slug,
+        name,
+        last_name,
+        position: position ?? null,
+        company: company ?? null,
+        whatsapp,
+        email,
+        mini_bio: safe<string>(mini_bio, null),
+        template_config: template_config ?? null,
+        avatar_url: null,
+        edit_token,
+        ...rest,
+      })
       .select("id, slug, edit_token")
       .single();
 
     if (insErr) {
       return NextResponse.json(
         { ok: false, error: insErr.message },
-        { status: 500 }
+        { status: 400 }
       );
     }
 
-    // 4) Marcar el code como reclamado
+    // 5) Sube avatar (si viene) y actualiza avatar_url
+    try {
+      const publicUrl =
+        typeof photoDataUrl === "string" && photoDataUrl.startsWith("http")
+          ? photoDataUrl
+          : await uploadAvatarFromDataUrl(
+              photoDataUrl,
+              `profiles/${inserted.id}`
+            );
 
-    const codeNorm = String(code).trim().toLowerCase(); // por si llega en mayúsculas
+      if (publicUrl) {
+        await admin
+          .from("profiles")
+          .update({ avatar_url: publicUrl })
+          .eq("id", inserted.id);
+      }
+    } catch (e: any) {
+      console.warn("upload avatar failed:", e?.message || e);
+      // no bloquea el flujo
+    }
 
-    const updatePatch = {
-      status: "claimed", // <-- text
-      claimed: true, // <-- bool
-      claimed_at: new Date().toISOString(),
-      slug,
-    };
-
+    // 6) Marca short_code como usado (status + claimed + claimed_at + slug)
     const { error: updErr } = await admin
       .from("short_codes")
-      .update(updatePatch)
+      .update({
+        status: "claimed",
+        claimed: true,
+        claimed_at: new Date().toISOString(),
+        slug: inserted.slug,
+      })
       .eq("code", codeNorm);
 
     if (updErr) {
-      // Perfil creado pero fallo marcando el code: no bloquees al usuario
+      // No bloqueamos al usuario si esto falla
       return NextResponse.json({
         ok: true,
-        slug,
+        slug: inserted.slug,
         edit_token,
         warn: updErr.message,
       });
     }
 
-    return NextResponse.json({ ok: true, slug, edit_token });
-  } catch (err: any) {
+    // 7) OK
+    return NextResponse.json({ ok: true, slug: inserted.slug, edit_token });
+  } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message || "Server error" },
+      { ok: false, error: e?.message || "Server error" },
       { status: 500 }
     );
   }

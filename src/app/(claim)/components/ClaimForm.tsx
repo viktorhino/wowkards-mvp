@@ -16,7 +16,6 @@ function sanitizeTelInput(raw: string) {
   else s = s.replace(/\+/g, "");
   return s;
 }
-
 function applyGroups(d: string, groups: number[], sep = "-") {
   const out: string[] = [];
   let i = 0;
@@ -115,13 +114,13 @@ function isHexColor(v: string) {
 
 /* ───────── componente ───────── */
 export default function ClaimForm({ code }: { code: string }) {
-  // stepper y estado de guardado
-  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [saving, setSaving] = useState(false);
 
   // básicos
   const [name, setName] = useState("");
   const [last, setLast] = useState("");
+  const [position, setPosition] = useState("");
+  const [company, setCompany] = useState("");
 
   // slug
   const [slug, setSlug] = useState("");
@@ -168,7 +167,7 @@ export default function ClaimForm({ code }: { code: string }) {
 
   // refs
   const formRef = useRef<HTMLFormElement>(null);
-  const fileCamRef = useRef<HTMLInputElement>(null); // para abrir cámara nativa (móvil)
+  const fileCamRef = useRef<HTMLInputElement>(null);
 
   // heurística móvil
   useEffect(() => {
@@ -182,12 +181,13 @@ export default function ClaimForm({ code }: { code: string }) {
     setIsMobile(mobileUA || (touch && coarse));
   }, []);
 
-  // slug sugerido / chequeo
+  // slug sugerido
   useEffect(() => {
     if (slugTouched) return;
     setSlug(suggestSlug(name || "", last || ""));
   }, [name, last, slugTouched]);
 
+  // chequeo de disponibilidad de slug
   useEffect(() => {
     if (!slug) {
       setSlugOk(null);
@@ -256,7 +256,7 @@ export default function ClaimForm({ code }: { code: string }) {
     setWaValid(norm.valid);
   }
 
-  // extras helpers
+  // extras
   function addExtra() {
     if (!canAddExtra) return;
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -291,7 +291,7 @@ export default function ClaimForm({ code }: { code: string }) {
     );
   }
 
-  // validaciones por paso
+  // validaciones
   const step1Ok =
     name.trim() &&
     last.trim() &&
@@ -299,11 +299,11 @@ export default function ClaimForm({ code }: { code: string }) {
     waValid === true &&
     emailValid === true &&
     !emailTaken;
-  const step2Ok = true; // opcionales
+  const step2Ok = true;
   const step3Ok = isHexColor(primary) && isHexColor(accent) && layout;
   const canSubmit = !!(step1Ok && step2Ok && step3Ok) && !saving;
 
-  // submit con estado "saving"
+  // submit -> GUARDA y REDIRIGE A PREVIEW (con ?edit=token&code=CODE o ?code=CODE)
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
@@ -313,7 +313,6 @@ export default function ClaimForm({ code }: { code: string }) {
       const { e164: waE164, valid } = normalizeWhatsapp(whatsapp);
       if (!valid) {
         alert("WhatsApp no es válido");
-        setStep(1);
         setSaving(false);
         return;
       }
@@ -331,21 +330,33 @@ export default function ClaimForm({ code }: { code: string }) {
         }))
         .filter((x) => x.value.length > 0);
 
-      const nameCap = capitalizeWords(name);
-      const lastCap = capitalizeWords(last);
+      const codeNorm = String(code || "")
+        .trim()
+        .toLowerCase();
+      if (!codeNorm) {
+        alert("Falta el código.");
+        setSaving(false);
+        return;
+      }
 
       const body = {
-        code,
-        name: nameCap,
-        last_name: lastCap,
+        code: codeNorm,
+        name: capitalizeWords(name),
+        last_name: capitalizeWords(last),
+        position: position.trim() || undefined,
+        company: company.trim() || undefined,
         whatsapp: waE164,
         email: emailLower,
         slug: slugFinal,
+        // Volvemos al contrato original del backend:
+        mini_bio: bio || undefined,
+        photoDataUrl: photoDataUrl || undefined,
+
         template_config: {
           layout,
           brand: { primary, accent },
-          bio: bio || undefined,
-          photoDataUrl: photoDataUrl || undefined,
+          // bio: bio || undefined,
+          // photoDataUrl: photoDataUrl || undefined,
           extras: extrasOut.length ? extrasOut : undefined,
         },
       };
@@ -356,10 +367,30 @@ export default function ClaimForm({ code }: { code: string }) {
         body: JSON.stringify(body),
       });
       const json = await res.json();
+
       if (json?.ok && json?.slug) {
-        window.location.href = `/${json.slug}`;
+        const slugResp = String(json.slug);
+        const token =
+          typeof json.edit_token === "string" ? json.edit_token : undefined;
+
+        // → Siempre vamos a /preview. Si hay token, PRIORIDAD al token.
+        const params = new URLSearchParams();
+        if (token) params.set("edit", token);
+        if (code) params.set("code", String(code));
+
+        const url = `/preview/${encodeURIComponent(
+          slugResp
+        )}?${params.toString()}`;
+        window.location.assign(url);
       } else {
-        alert(json?.error || "No se pudo reclamar el código.");
+        const msg = String(json?.error || "");
+        if (/code invalid|claimed/i.test(msg)) {
+          alert(
+            "El código no existe o ya fue reclamado. Verifica que esté bien escrito (minúsculas) o usa otro."
+          );
+        } else {
+          alert(json?.error || "No se pudo reclamar el código.");
+        }
         setSaving(false);
       }
     } catch (err) {
@@ -380,21 +411,19 @@ export default function ClaimForm({ code }: { code: string }) {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-[#ffbb00] to-[#ffc833]">
-      {/* Contenedor central */}
       <div className="w-full mx-auto max-w-2xl px-4 pt-8 pb-2">
         <h1 className="text-[#23242a] text-3xl font-black mb-6 text-center tracking-[-0.05em]">
           Crea tu WOW kard
         </h1>
-        {/* Tarjeta que ocupa (casi) todo el alto visible */}
+
         <div className="bg-white rounded-2xl shadow-xl min-h-[calc(100vh-160px)] p-4 sm:p-6">
-          {/* Formulario */}
           <form
             id="claimForm"
             ref={formRef}
             onSubmit={onSubmit}
             className="flex flex-col gap-6"
           >
-            {/* ====== PASO 1 ====== */}
+            {/* PASO 1 */}
             <section>
               <div className="mb-3 flex items-center gap-3">
                 <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-[#FFC700]">
@@ -405,7 +434,6 @@ export default function ClaimForm({ code }: { code: string }) {
                 </h2>
               </div>
               <div className="rounded-xl bg-slate-50 p-4 space-y-3">
-                {/* Nombre / Apellido */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input
                     className="bg-white text-slate-900 placeholder-slate-400 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50"
@@ -421,21 +449,15 @@ export default function ClaimForm({ code }: { code: string }) {
                   />
                 </div>
 
-                {/* URL (slug) en una línea */}
-                {/* URL (slug) en dos líneas, responsive */}
                 <div className="mt-3 text-sm">
-                  {/* Línea 1 */}
                   <div className="text-slate-700 mb-1 text-center">
                     Tu URL sería:{" "}
                     <span className="whitespace-nowrap text-slate-700">
                       https://mi.wowkard.es/
                     </span>
                   </div>
-
-                  {/* Línea 2: prefijo fijo + input flexible + icono absoluto */}
                   <div className="flex items-center gap-2">
                     <span className="whitespace-nowrap text-slate-700"></span>
-
                     <div className="relative flex-1 min-w-0">
                       <input
                         className="bg-white text-slate-900 placeholder-[#cccccd] rounded-lg px-2 py-1 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 w-full pr-7 text-center"
@@ -444,7 +466,6 @@ export default function ClaimForm({ code }: { code: string }) {
                         onBlur={() => setSlug(normalizeSlug(slug))}
                         aria-label="Slug"
                       />
-                      {/* Icono superpuesto a la derecha */}
                       <span className="absolute inset-y-0 right-1 flex items-center justify-center w-5">
                         {checkingSlug ? (
                           <IconSpinner className="w-5 h-5 animate-spin text-slate-400" />
@@ -458,7 +479,21 @@ export default function ClaimForm({ code }: { code: string }) {
                   </div>
                 </div>
 
-                {/* WhatsApp + Email */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input
+                    className="w-full rounded-xl ring-1 ring-black/10 px-3 py-2"
+                    placeholder="Cargo (opcional)"
+                    value={position}
+                    onChange={(e) => setPosition(e.target.value)}
+                  />
+                  <input
+                    className="w-full rounded-xl ring-1 ring-black/10 px-3 py-2"
+                    placeholder="Empresa (opcional)"
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                  />
+                </div>
+
                 <div className="mt-3 grid grid-cols-1 gap-3">
                   <div className="relative">
                     <input
@@ -472,7 +507,8 @@ export default function ClaimForm({ code }: { code: string }) {
                       }
                       inputMode="tel"
                       autoComplete="tel"
-                      pattern="^\\+?\\d(?:[ -]?\\d)*$"
+                      pattern="^\\+?[0-9](?:[\\s-]?[0-9]){5,14}$"
+                      //pattern="^\\+?\\d(?:[ -]?\\d)*$"
                       aria-label="WhatsApp"
                     />
                     <span className="absolute inset-y-0 right-1 flex items-center justify-center w-5">
@@ -527,9 +563,10 @@ export default function ClaimForm({ code }: { code: string }) {
                 </div>
               </div>
             </section>
+
             <hr className="my-4 border-t-1 border-gray-200" />
 
-            {/* ====== PASO 2 ====== */}
+            {/* PASO 2 */}
             <section>
               <div className="mb-3 flex items-center gap-3">
                 <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-[#FFC700]">
@@ -548,7 +585,6 @@ export default function ClaimForm({ code }: { code: string }) {
                 onChange={(e) => setBio(e.target.value)}
               />
 
-              {/* Extras dinámicos */}
               <div className="mt-4 space-y-2">
                 <label className="text-sm block text-slate-800">
                   Otros datos (máx. 3)
@@ -560,7 +596,6 @@ export default function ClaimForm({ code }: { code: string }) {
                       .filter((e) => e.id !== row.id && e.kind !== "otro")
                       .map((e) => e.kind as any)
                   );
-
                   return (
                     <div
                       key={row.id}
@@ -644,8 +679,10 @@ export default function ClaimForm({ code }: { code: string }) {
                 </button>
               </div>
             </section>
+
             <hr className="my-4 border-t-1 border-gray-200" />
-            {/* ====== PASO 3 ====== */}
+
+            {/* PASO 3 */}
             <section>
               <div className="mb-3 flex items-center gap-3">
                 <span className="inline-flex items-center rounded-full bg-black px-3 py-1 text-xs font-semibold text-[#FFC700]">
@@ -656,9 +693,7 @@ export default function ClaimForm({ code }: { code: string }) {
                 </h2>
               </div>
               <div className="rounded-xl bg-slate-50 p-4 space-y-3">
-                {/* 1 línea: subir / tomar (móvil) */}
                 <div className="flex items-center gap-3">
-                  {/* Subir desde galería/archivos */}
                   <label className="rounded-xl px-3 py-2 cursor-pointer bg-white text-slate-800 ring-1 ring-black/10 hover:bg-slate-50">
                     Subir foto
                     <input
@@ -669,7 +704,6 @@ export default function ClaimForm({ code }: { code: string }) {
                     />
                   </label>
 
-                  {/* Tomar foto: abre cámara nativa solo en móvil */}
                   {isMobile && (
                     <>
                       <button
@@ -756,19 +790,16 @@ export default function ClaimForm({ code }: { code: string }) {
         </div>
       </div>
 
-      {/* Barra inferior (siempre debajo de la tarjeta) */}
+      {/* Barra inferior */}
       <div className="w-full bg-[#000]/80 backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 py-3 flex gap-3">
           <button
-            type="submit"
-            form="claimForm"
-            disabled={!canSubmit || saving}
+            type="button"
             className="flex-1 rounded-full bg-[#FFC62E] text-black py-3 font-semibold shadow-[inset_0_-2px_0_rgba(0,0,0,.18)] disabled:opacity-50 hover:brightness-105"
-            onClick={(e) => {
-              // este botón sigue siendo visual; el submit lo maneja el form
-            }}
+            disabled={!canSubmit || saving}
+            onClick={() => formRef.current?.requestSubmit()}
           >
-            {saving ? "Guardando..." : "Guardar y activar"}
+            {saving ? "Guardando..." : "Guardar"}
           </button>
         </div>
       </div>

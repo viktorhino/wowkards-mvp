@@ -21,3 +21,19 @@ export function getPalette(cfg?: TemplateConfig) {
   const accent = cfg?.brand?.accent || DEFAULT_TEMPLATE_CONFIG.brand!.accent!;
   return { primary, accent };
 }
+
+// --- Tipado mínimo del perfil público que renderizan las plantillas ---
+export type PublicProfile = {
+  slug: string;
+  name?: string;
+  last_name?: string;
+  position?: string;
+  company?: string;
+  mini_bio?: string;
+  whatsapp?: string;
+  email?: string;
+  website?: string;
+  avatar_url?: string;
+  template_config?: TemplateConfig;
+  // extras?: { type: string; label?: string; value: string }[]; // opcional
+};

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { normalizeWhatsapp } from "@/lib/phone";
 import { normalizeSlug } from "@/lib/slug"; // sólo para mostrar, no se edita
@@ -32,9 +32,6 @@ const KIND_LABEL: Record<Exclude<ExtraKind, "otro">, string> = {
   x: "X",
 };
 
-function isHex(v: string) {
-  return /^#([0-9a-f]{6}|[0-9a-f]{3})$/i.test(v.trim());
-}
 function sanitizeTelInput(raw: string) {
   let s = raw.replace(/[^\d+]/g, "");
   if (s.startsWith("+")) s = "+" + s.slice(1).replace(/\+/g, "");
@@ -74,6 +71,9 @@ export default function EditByToken({ token }: { token: string }) {
   // Form state
   const [name, setName] = useState("");
   const [last, setLast] = useState("");
+  const [position, setPosition] = useState("");
+  const [company, setCompany] = useState("");
+
   const [email, setEmail] = useState("");
   const [emailValid, setEmailValid] = useState<boolean | null>(null);
   const [whatsapp, setWhatsapp] = useState("");
@@ -84,7 +84,10 @@ export default function EditByToken({ token }: { token: string }) {
   const [primary, setPrimary] = useState("#0A66FF");
   const [accent, setAccent] = useState("#4FB0FF");
   const [bio, setBio] = useState("");
-  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+
+  // FOTO
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null); // foto actual (URL pública o legacy)
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null); // nueva foto (DataURL) para subir
 
   // extras
   const [extras, setExtras] = useState<ExtraRow[]>([]);
@@ -114,6 +117,7 @@ export default function EditByToken({ token }: { token: string }) {
           return;
         }
         const p = json.profile;
+
         setName(p.name || "");
         setLast(p.last_name || "");
         setEmail(p.email || "");
@@ -122,12 +126,37 @@ export default function EditByToken({ token }: { token: string }) {
         setWaDisplay(maskWhatsappDisplay(p.whatsapp || ""));
         setWaValid(!!p.whatsapp);
         setSlug(p.slug || "");
+
         const cfg = p.template_config || {};
         setLayout(cfg.layout || "cardA");
         setPrimary(cfg.brand?.primary || "#0A66FF");
         setAccent(cfg.brand?.accent || "#4FB0FF");
-        setBio(cfg.bio || "");
-        setPhotoDataUrl(cfg.photoDataUrl || null);
+        setBio(p.mini_bio ?? cfg.mini_bio ?? cfg.bio ?? "");
+        setPosition(p.position ?? cfg.position ?? cfg.cargo ?? "");
+        setCompany(p.company ?? cfg.company ?? cfg.empresa ?? "");
+
+        // FOTO: mostrar siempre la actual si existe (root o legacy)
+        const legacyAvatar =
+          p.avatar_url ||
+          cfg.avatar_url ||
+          cfg.photoUrl ||
+          cfg.photo_url ||
+          (typeof cfg.photoDataUrl === "string" &&
+          cfg.photoDataUrl.startsWith("http")
+            ? cfg.photoDataUrl
+            : null);
+
+        setAvatarUrl(legacyAvatar || null);
+
+        // Si existía una dataURL guardada legacy, no la usamos como actual, pero la mostramos si quieres re-subir.
+        setPhotoDataUrl(
+          cfg.photoDataUrl &&
+            typeof cfg.photoDataUrl === "string" &&
+            cfg.photoDataUrl.startsWith("data:")
+            ? cfg.photoDataUrl
+            : null
+        );
+
         const ex = (cfg.extras || []) as Array<{
           kind: ExtraKind;
           label?: string;
@@ -169,6 +198,20 @@ export default function EditByToken({ token }: { token: string }) {
     setWhatsapp(norm.e164);
     setWaDisplay(maskWhatsappDisplay(norm.e164));
     setWaValid(norm.valid);
+  }
+
+  // SUBIR FOTO: leer como DataURL y previsualizar
+  function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || "");
+      setPhotoDataUrl(dataUrl); // nueva imagen a subir
+      setAvatarUrl(dataUrl); // previsualiza de inmediato
+    };
+    reader.readAsDataURL(f);
+    e.target.value = ""; // reset input
   }
 
   function updateExtra(id: string, patch: Partial<ExtraRow>) {
@@ -231,6 +274,7 @@ export default function EditByToken({ token }: { token: string }) {
         layout,
         brand: { primary, accent },
         bio: bio || undefined,
+        // Enviamos la NUEVA foto si la hay; el backend la sube a Storage y actualiza avatar_url
         photoDataUrl: photoDataUrl || undefined,
         extras: extras
           .map((it) => ({
@@ -252,6 +296,9 @@ export default function EditByToken({ token }: { token: string }) {
           name: capitalizeWords(name),
           last_name: capitalizeWords(last),
           email: email || null,
+          position: position || null,
+          company: company || null,
+
           whatsapp: e164 || null,
           template_config,
         }),
@@ -262,7 +309,6 @@ export default function EditByToken({ token }: { token: string }) {
         setSaving(false);
         return;
       }
-      // Éxito: ir a preview con el mismo token
       window.location.href = `/preview/${encodeURIComponent(
         json.slug
       )}?edit=${encodeURIComponent(token)}`;
@@ -297,28 +343,33 @@ export default function EditByToken({ token }: { token: string }) {
           <h1 className="text-2xl font-black text-center">Editar WOWKard</h1>
 
           <div className="mt-6 grid gap-4">
+            {/* Nombre / Apellido */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
-                className="rounded-xl ring-1 ring-black/10 px-3 py-2"
+                className="w-full rounded-xl ring-1 ring-black/10 px-3 py-2"
                 placeholder="Nombre"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
               <input
-                className="rounded-xl ring-1 ring-black/10 px-3 py-2"
+                className="w-full rounded-xl ring-1 ring-black/10 px-3 py-2"
                 placeholder="Apellido"
                 value={last}
                 onChange={(e) => setLast(e.target.value)}
               />
             </div>
 
-            {/* Slug (bloqueado) */}
+            {/* Slug */}
             <div className="text-sm">
-              <div className="text-slate-700 mb-1 text-center">Tu URL es:</div>
-              <div className="flex items-center gap-2">
-                <span className="text-slate-700">https://mi.wowkard.es/</span>
+              <div className="text-slate-700 mb-1 sm:text-center">
+                Tu URL es:
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <span className="text-slate-700 break-all">
+                  https://mi.wowkard.es/
+                </span>
                 <input
-                  className="rounded-lg ring-1 ring-black/10 px-2 py-1 text-center flex-1 bg-slate-100"
+                  className="w-full sm:flex-1 min-w-0 rounded-lg ring-1 ring-black/10 px-2 py-1 text-center bg-slate-100"
                   value={normalizeSlug(slug)}
                   readOnly
                 />
@@ -328,15 +379,31 @@ export default function EditByToken({ token }: { token: string }) {
               </p>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input
+                className="w-full rounded-xl ring-1 ring-black/10 px-3 py-2"
+                placeholder="Cargo (opcional)"
+                value={position}
+                onChange={(e) => setPosition(e.target.value)}
+              />
+              <input
+                className="w-full rounded-xl ring-1 ring-black/10 px-3 py-2"
+                placeholder="Empresa (opcional)"
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+              />
+            </div>
+
+            {/* Email / WhatsApp */}
             <div className="grid gap-3">
               <input
-                className="rounded-xl ring-1 ring-black/10 px-3 py-2"
+                className="w-full rounded-xl ring-1 ring-black/10 px-3 py-2"
                 placeholder="Email"
                 value={email}
                 onChange={onEmailChange}
               />
               <input
-                className="rounded-xl ring-1 ring-black/10 px-3 py-2"
+                className="w-full rounded-xl ring-1 ring-black/10 px-3 py-2"
                 placeholder="WhatsApp"
                 value={waDisplay}
                 onChange={onWhatsappChange}
@@ -344,18 +411,64 @@ export default function EditByToken({ token }: { token: string }) {
               />
             </div>
 
+            {/* Foto */}
+            <div>
+              <label className="text-sm block mb-2">Foto</label>
+              <div className="flex items-center gap-3">
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100 ring-1 ring-black/10">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={
+                      photoDataUrl ||
+                      avatarUrl ||
+                      "/defaults/avatar-placeholder.png"
+                    }
+                    alt="Foto"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="inline-block">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={onPickFile}
+                    />
+                    <span className="cursor-pointer rounded-full px-3 py-2 text-sm font-medium ring-1 ring-black/10 bg-white">
+                      Subir foto
+                    </span>
+                  </label>
+                  {(photoDataUrl || avatarUrl) && (
+                    <button
+                      type="button"
+                      className="text-sm underline"
+                      onClick={() => {
+                        setPhotoDataUrl(null);
+                        setAvatarUrl(null);
+                      }}
+                    >
+                      Quitar foto
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Mini bio */}
             <textarea
-              className="rounded-xl ring-1 ring-black/10 px-3 py-2"
+              className="w-full rounded-xl ring-1 ring-black/10 px-3 py-2 break-words"
               rows={3}
               placeholder="Mini bio (opcional)"
               value={bio}
               onChange={(e) => setBio(e.target.value)}
             />
 
+            {/* Diseño */}
             <div>
               <label className="text-sm block mb-1">Diseño de tarjeta</label>
               <select
-                className="rounded-xl ring-1 ring-black/10 px-3 py-2 w-full"
+                className="w-full rounded-xl ring-1 ring-black/10 px-3 py-2"
                 value={layout}
                 onChange={(e) => setLayout(e.target.value as TemplateLayout)}
               >
@@ -367,6 +480,7 @@ export default function EditByToken({ token }: { token: string }) {
               </select>
             </div>
 
+            {/* Colores */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-sm block mb-1">Color primario</label>
@@ -400,10 +514,10 @@ export default function EditByToken({ token }: { token: string }) {
                 return (
                   <div
                     key={row.id}
-                    className="grid grid-cols-12 gap-2 items-center"
+                    className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center"
                   >
                     <select
-                      className="col-span-4 rounded-xl ring-1 ring-black/10 px-3 py-2"
+                      className="w-full sm:col-span-4 rounded-xl ring-1 ring-black/10 px-3 py-2"
                       value={row.kind}
                       onChange={(e) =>
                         updateExtra(row.id, { kind: e.target.value as any })
@@ -416,9 +530,10 @@ export default function EditByToken({ token }: { token: string }) {
                       ))}
                       <option value="otro">Otro</option>
                     </select>
+
                     {row.kind === "otro" && (
                       <input
-                        className="col-span-3 rounded-xl ring-1 ring-black/10 px-3 py-2"
+                        className="w-full sm:col-span-3 rounded-xl ring-1 ring-black/10 px-3 py-2"
                         placeholder="Etiqueta"
                         value={row.label}
                         onChange={(e) =>
@@ -426,9 +541,10 @@ export default function EditByToken({ token }: { token: string }) {
                         }
                       />
                     )}
+
                     <input
-                      className={`${
-                        row.kind === "otro" ? "col-span-4" : "col-span-7"
+                      className={`w-full ${
+                        row.kind === "otro" ? "sm:col-span-4" : "sm:col-span-7"
                       } rounded-xl ring-1 ring-black/10 px-3 py-2`}
                       placeholder="Valor"
                       value={row.value}
@@ -436,9 +552,10 @@ export default function EditByToken({ token }: { token: string }) {
                         updateExtra(row.id, { value: e.target.value })
                       }
                     />
+
                     <button
                       type="button"
-                      className="col-span-1 rounded-xl ring-1 ring-black/10 px-3 py-2"
+                      className="w-full sm:w-auto sm:col-span-1 rounded-xl ring-1 ring-black/10 px-3 py-2"
                       onClick={() => removeExtra(row.id)}
                     >
                       ✕
@@ -455,24 +572,6 @@ export default function EditByToken({ token }: { token: string }) {
                 {canAddExtra ? "Agregar otros datos" : "Límite de 3 alcanzado"}
               </button>
             </div>
-
-            {/* Foto (solo mantener/quitar) */}
-            {photoDataUrl && (
-              <div className="mt-2">
-                <img
-                  src={photoDataUrl}
-                  alt="preview"
-                  className="w-24 h-24 rounded-full object-cover border"
-                />
-                <button
-                  type="button"
-                  className="ml-3 text-sm underline"
-                  onClick={() => setPhotoDataUrl(null)}
-                >
-                  Quitar foto
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
@@ -480,14 +579,14 @@ export default function EditByToken({ token }: { token: string }) {
               href={`/preview/${encodeURIComponent(
                 slug
               )}?edit=${encodeURIComponent(token)}`}
-              className="text-center rounded-full bg-white text-black px-4 py-3 font-semibold ring-1 ring-black/10 hover:bg-gray-50"
+              className="w-full text-center rounded-full bg-white text-black px-4 py-3 font-semibold ring-1 ring-black/10 hover:bg-gray-50"
             >
               Cancelar
             </a>
             <button
               onClick={onSave}
               disabled={saving}
-              className="rounded-full bg-[#FFC62E] text-black px-4 py-3 font-semibold shadow-[inset_0_-2px_0_rgba(0,0,0,.18)] hover:brightness-105"
+              className="w-full rounded-full bg-[#FFC62E] text-black px-4 py-3 font-semibold shadow-[inset_0_-2px_0_rgba(0,0,0,.18)] hover:brightness-105"
             >
               {saving ? "Guardando…" : "Guardar cambios"}
             </button>

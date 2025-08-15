@@ -1,110 +1,207 @@
-export const dynamic = "force-dynamic";
-
-import { supabase } from "@/lib/supabaseClient";
+// src/app/preview/[slug]/page.tsx
+import "server-only";
 import Link from "next/link";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { buildCongratsPreviewMsg } from "@/lib/whatsapp";
 
-type Params = { slug: string };
-type Search = { searchParams?: { [k: string]: string | string[] | undefined } };
+type SP = Record<string, string | string[] | undefined>;
 
-const digits = (s: string | null | undefined) => (s || "").replace(/\D/g, "");
-
-const toE164Digits = (raw: string | null | undefined, defaultCc = "57") => {
-  const d = digits(raw);
-  if (!d) return null;
-  // si ya viene con CC (11+ dígitos), lo dejamos; si parecen 10 dígitos, anteponemos CC
-  if (d.length >= 11) return d;
-  if (d.length === 10) return defaultCc + d;
-  return d; // fallback
-};
-
-const buildWhatsAppShare = (profileUrl: string, editUrl?: string) => {
-  const lines = [
-    "¡Esta es tu WOWKard! 🎉",
-    profileUrl,
-    editUrl ? "\nPara editarla más tarde:" : "",
-    editUrl || "",
-  ].filter(Boolean);
-  const text = encodeURIComponent(lines.join("\n"));
-  return `https://wa.me/?text=${text}`;
-};
-
-export default async function Page(
-  props: { params: Promise<Params> } & Search
-) {
+export default async function PreviewPage(props: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<SP>;
+}) {
+  // NEXT 15: params y searchParams son Promises
   const { slug } = await props.params;
-  const editToken =
-    typeof props.searchParams?.edit === "string"
-      ? props.searchParams!.edit
-      : undefined;
+  const sp = await props.searchParams;
 
-  // Trae el perfil
-  const { data: profile, error } = await supabase
+  const token = typeof sp.edit === "string" ? sp.edit : undefined;
+  const code = typeof sp.code === "string" ? sp.code : undefined;
+
+  // ✅ Instanciamos Supabase directamente (anon key) en el server component
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const supabase = createSupabaseClient(supabaseUrl, supabaseAnon, {
+    auth: { persistSession: false },
+  });
+
+  const { data: prof, error } = await supabase
     .from("profiles")
-    .select("*")
+    .select(
+      "name,last_name,whatsapp,email,template_config,mini_bio,position, company,slug,avatar_url"
+    )
     .eq("slug", slug)
     .maybeSingle();
 
-  if (error || !profile) {
-    return <div className="p-6">No se pudo cargar el perfil.</div>;
+  if (error || !prof) {
+    return (
+      <main className="max-w-5xl mx-auto p-6">No se encontró el perfil.</main>
+    );
   }
 
-  const profileUrl = `${process.env.NEXT_PUBLIC_BASE_URL || ""}/${slug}`
-    .replace(/\/+$/, "")
-    .replace(/([^:]\/)\/+/g, "$1");
-  const editUrl = editToken
-    ? `${process.env.NEXT_PUBLIC_BASE_URL || ""}/edit/${editToken}`
+  const fullName = `${prof.name ?? ""} ${prof.last_name ?? ""}`.trim();
+
+  // Avatar con fallback legacy
+  const legacyAvatar =
+    (prof.template_config as any)?.avatar_url ||
+    (prof.template_config as any)?.photoUrl ||
+    (prof.template_config as any)?.photo_url ||
+    (prof.template_config as any)?.photoDataUrl;
+
+  const avatar =
+    prof.avatar_url || legacyAvatar || "/defaults/avatar-placeholder.png";
+
+  // WhatsApp + enlaces
+  const wa = (prof.whatsapp || "").replace(/\D/g, "");
+  /*const base = process.env.NEXT_PUBLIC_BASE_URL || "";
+  const publicUrl = `${base}/${slug}`;
+  const editUrl = token ? `${base}/edit/${token}` : undefined;
+
+  const waText = [
+    `¡Hola ${fullName || ""}!`,
+    `Tu WOWKard está lista para revisión:`,
+    publicUrl,
+    editUrl ? `Si quieres corregir algo: ${editUrl}` : null,
+    `— Emprendedores WOW!`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+*/
+  const base =
+    process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || // prod: https://mi.wowkard.es
+    process.env.NEXT_PUBLIC_BASE_URL || // fallback (dev): http://localhost:3000
+    "";
+
+  const publicUrl = `${base}/${slug}`;
+  const editUrl = token ? `${base}/edit/${token}` : undefined;
+
+  // Si quieres “solo nombre” sin apellido en el saludo:
+  const firstName = (prof.name || "").trim();
+  //const fullName = `${prof.name ?? ""} ${prof.last_name ?? ""}`.trim();
+
+  const waText = buildCongratsPreviewMsg({
+    fullName: firstName || fullName,
+    publicUrl,
+    editUrl,
+  });
+
+  const waHref = wa
+    ? `https://wa.me/${wa}?text=${encodeURIComponent(waText)}`
     : undefined;
 
-  // mensaje
-  const lines = [
-    "¡Esta es tu WOWKard!",
-    profileUrl,
-    editUrl ? "\nPara editarla más tarde:" : "",
-    editUrl || "",
-  ].filter(Boolean);
-  const text = encodeURIComponent(lines.join("\n"));
-
-  // número del perfil
-  const phoneDigits = toE164Digits(profile.whatsapp, "57");
-
-  // link final (si hay número -> chat directo; si no -> share genérico)
-  const waHref = phoneDigits
-    ? `https://wa.me/${phoneDigits}?text=${text}`
-    : `https://wa.me/?text=${text}`;
-
-  const waShare = buildWhatsAppShare(profileUrl, editUrl);
-
-  // Carga perezosa de la plantilla
-  const mod = await import("@/templates/TemplateLinkBio/component");
-  const Template = (mod as any).default as React.FC<any>;
-
   return (
-    <main className="min-h-screen flex flex-col items-center p-6 gap-4">
-      <Template profile={profile} />
-      <div className="w-full max-w-md flex flex-col gap-2 mt-2">
-        <a
-          className="rounded-lg border p-3 text-center hover:bg-gray-50"
-          href={waHref}
-          target="_blank"
-          rel="noopener noreferrer"
+    <main className="max-w-5xl mx-auto p-6 space-y-6">
+      {/* Header con avatar */}
+      <div className="rounded-3xl bg-white/90 p-6 shadow">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-28 h-28 rounded-full ring-4 ring-white overflow-hidden bg-white shadow">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={avatar}
+              alt={fullName || "Avatar"}
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <h1 className="text-3xl font-bold">Revisa tus datos</h1>
+          {token && (
+            <Link
+              href={`/edit/${token}`}
+              className="rounded-full px-4 py-2 text-sm font-semibold bg-gray-200"
+              title="Editar (cambiar foto y demás)"
+            >
+              Cambiar foto / Editar
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* Grid de datos */}
+      <section className="grid md:grid-cols-2 gap-4">
+        <div className="rounded-xl bg-gray-50 p-4">
+          <div className="text-sm text-gray-500">Nombre</div>
+          <div className="font-medium">{fullName || "—"}</div>
+          <div className="rounded-xl bg-gray-50 p-4">
+            <div className="text-sm text-gray-500">Cargo</div>
+            <div className="font-medium">{prof.position || "—"}</div>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-4">
+            <div className="text-sm text-gray-500">Empresa</div>
+            <div className="font-medium">{prof.company || "—"}</div>
+          </div>
+        </div>
+        <div className="rounded-xl bg-gray-50 p-4">
+          <div className="text-sm text-gray-500">Email</div>
+          <div className="font-medium">{prof.email || "—"}</div>
+        </div>
+        <div className="rounded-xl bg-gray-50 p-4">
+          <div className="text-sm text-gray-500">WhatsApp</div>
+          <div className="font-medium">{prof.whatsapp || "—"}</div>
+        </div>
+        <div className="rounded-xl bg-gray-50 p-4">
+          <div className="text-sm text-gray-500">URL pública</div>
+          <div className="font-medium">/{slug}</div>
+        </div>
+        <div className="rounded-xl bg-gray-50 p-4">
+          <div className="text-sm text-gray-500">Diseño</div>
+          <div className="font-medium">
+            {prof.template_config?.layout ?? "cardA"}
+          </div>
+        </div>
+        <div className="rounded-xl bg-gray-50 p-4">
+          <div className="text-sm text-gray-500">Colores</div>
+          <div className="flex items-center gap-4">
+            <span className="inline-flex items-center gap-2">
+              <span
+                className="inline-block w-3 h-3 rounded-full"
+                style={{
+                  background: prof.template_config?.brand?.primary ?? "#0A66FF",
+                }}
+              />
+              <code>{prof.template_config?.brand?.primary ?? "#0A66FF"}</code>
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span
+                className="inline-block w-3 h-3 rounded-full"
+                style={{
+                  background: prof.template_config?.brand?.accent ?? "#4FB0FF",
+                }}
+              />
+              <code>{prof.template_config?.brand?.accent ?? "#4FB0FF"}</code>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Mini bio */}
+      <section className="rounded-xl bg-gray-50 p-4">
+        <div className="text-sm text-gray-500">Mini bio</div>
+        <div className="font-medium">{prof.mini_bio || "—"}</div>
+      </section>
+
+      {/* CTAs */}
+      <div className="flex flex-col md:flex-row gap-3 md:gap-4 pt-2">
+        <Link
+          href={token ? `/edit/${token}` : code ? `/${code}` : "/"}
+          className="flex-1 rounded-full bg-[#ffe59f] text-black py-3 font-semibold text-center"
         >
-          {phoneDigits ? "Enviar a su WhatsApp" : "Compartir por WhatsApp"}
-        </a>
-        {editToken && (
-          <Link
-            className="rounded-lg border p-3 text-center hover:bg-gray-50"
-            href={`/edit/${editToken}`}
+          Regresar y corregir datos
+        </Link>
+        {waHref && (
+          <a
+            href={waHref}
+            className="flex-1 rounded-full bg-green-500 text-white py-3 font-semibold shadow-[inset_0_-2px_0_rgba(0,0,0,.18)] text-center"
+            target="_blank"
+            rel="noopener noreferrer"
           >
-            Editar mis datos
-          </Link>
+            Enviar WhatsApp
+          </a>
         )}
-        <a
-          className="rounded-lg border p-3 text-center hover:bg-gray-50"
+
+        <Link
           href={`/${slug}`}
-          target="_blank"
+          className="flex-1 rounded-full bg-[#FFC62E] text-black py-3 font-semibold shadow-[inset_0_-2px_0_rgba(0,0,0,.18)] text-center"
         >
-          Ver URL pública
-        </a>
+          Confirmar y ver tarjeta
+        </Link>
       </div>
     </main>
   );
