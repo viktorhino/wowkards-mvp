@@ -1,54 +1,31 @@
-/*export type TemplateKey =
-  | "TemplateLinkBio"
-  | "TemplateCatalogo"
-  | "TemplateFormulario"
-  | "TemplateEvento"
-  | "TemplateFidelizacion";
+import type { TemplateKey } from "@/templates/types";
 
-// Usamos `unknown` para props y forzamos el tipo con `as` para evitar chequeo estricto
-export const templateRegistry: Record<
-  TemplateKey,
-  () => Promise<{ default: unknown }>
-> = {
+// Registry de plantillas.
+// - Mantenemos "TemplateLinkBio" por compatibilidad, apuntando a CardA.
+// - Añadimos "CardA" y "CardB" explícitamente.
+// - "CardC" por ahora fallback a CardA (para no romper si aún no existe).
+
+type Loader = () => Promise<{ default: React.ComponentType<any> }>;
+
+export const templateRegistry: Record<TemplateKey, Loader> = {
   TemplateLinkBio: () =>
-    import("@/templates/TemplateLinkBio/component") as Promise<{
-      default: unknown;
+    import("@/templates/TemplateLinkBio/variants/CardA") as Promise<{
+      default: React.ComponentType<any>;
     }>,
-  TemplateCatalogo: () =>
-    import("@/templates/TemplateLinkBio/component") as Promise<{
-      default: unknown;
-    }>,
-  TemplateFormulario: () =>
-    import("@/templates/TemplateLinkBio/component") as Promise<{
-      default: unknown;
-    }>,
-  TemplateEvento: () =>
-    import("@/templates/TemplateLinkBio/component") as Promise<{
-      default: unknown;
-    }>,
-  TemplateFidelizacion: () =>
-    import("@/templates/TemplateLinkBio/component") as Promise<{
-      default: unknown;
-    }>,
-};*/
 
-import type { ComponentType } from "react";
+  CardA: () =>
+    import("@/templates/TemplateLinkBio/variants/CardA") as Promise<{
+      default: React.ComponentType<any>;
+    }>,
 
-export type TemplateKey =
-  | "TemplateLinkBio"
-  | "TemplateCatalogo"
-  | "TemplateFormulario"
-  | "TemplateEvento"
-  | "TemplateFidelizacion";
+  CardB: () =>
+    import("@/templates/TemplateLinkBio/variants/CardB") as Promise<{
+      default: React.ComponentType<any>;
+    }>,
 
-// Cargador dinámico de cada template. Por ahora todos apuntan a TemplateLinkBio.
-export const templateRegistry: Record<
-  TemplateKey,
-  () => Promise<{ default: ComponentType<any> }>
-> = {
-  TemplateLinkBio: () => import("@/templates/TemplateLinkBio/component"),
-  TemplateCatalogo: () => import("@/templates/TemplateLinkBio/component"),
-  TemplateFormulario: () => import("@/templates/TemplateLinkBio/component"),
-  TemplateEvento: () => import("@/templates/TemplateLinkBio/component"),
-  TemplateFidelizacion: () => import("@/templates/TemplateLinkBio/component"),
+  // Fallback mientras no exista CardC.tsx:
+  CardC: () =>
+    import("@/templates/TemplateLinkBio/variants/CardA") as Promise<{
+      default: React.ComponentType<any>;
+    }>,
 };

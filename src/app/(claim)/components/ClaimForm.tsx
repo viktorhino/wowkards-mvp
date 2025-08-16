@@ -142,8 +142,8 @@ export default function ClaimForm({ code }: { code: string }) {
   // otros
   const [bio, setBio] = useState("");
   const [layout, setLayout] = useState<TemplateLayout>("cardA");
-  const [primary, setPrimary] = useState("#0A66FF");
-  const [accent, setAccent] = useState("#4FB0FF");
+  const [primary, setPrimary] = useState("#fed32a");
+  const [accent, setAccent] = useState("#000000");
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
 

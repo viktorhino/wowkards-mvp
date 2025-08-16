@@ -28,7 +28,7 @@ async function createWithFreeCode() {
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
-  console.log(data);
+  //console.log(data);
 
   if (error || !data) {
     // No hay códigos libres → manda al claim con un error legible
@@ -64,7 +64,7 @@ export default async function SedeWOW() {
             className="h-32 md:h-40 w-full"
             style={{ background: "linear-gradient(180deg,#ffcf3b,#ffb300)" }}
           />
-          <div className="px-6 md:px-10 pb-8 md:pb-12 -mt-10 md:-mt-12">
+          <div className="px-6 md:px-10 pb-8 md:pb-12 -mt-20 md:-mt-12">
             <h1 className="font-rc font-bold text-3xl md:text-4xl text-center mb-2">
               Activa tu <span className="whitespace-nowrap">Sede W🤩W</span>
             </h1>
