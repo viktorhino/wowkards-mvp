@@ -28,10 +28,8 @@ export async function GET(req: Request) {
       );
     }
     return NextResponse.json({ ok: true, profile: data });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || "Server error" },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Server error";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

@@ -4,10 +4,97 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { uploadAvatarFromDataUrl } from "@/lib/upload-avatar";
 
+/** Tipos de entrada (lo mínimo necesario para tipar sin any) */
+type ExtraIn = { kind: string; label?: string; value: string };
+type TemplateConfigIn = {
+  layout?: "cardA" | "cardB" | "cardC" | string;
+  brand?: { primary?: string; accent?: string };
+  extras?: ExtraIn[];
+} & Record<string, unknown>;
+
+type UpdateBody = {
+  token?: string; // también aceptamos edit_token
+  edit_token?: string;
+  slug?: string; // NO se permite actualizar desde aquí
+  photoDataUrl?: string | null;
+  name?: string;
+  last_name?: string;
+  position?: string | null;
+  company?: string | null;
+  whatsapp?: string;
+  email?: string;
+  bio?: string | null; // compatibilidad
+  mini_bio?: string | null;
+  template_config?: TemplateConfigIn;
+};
+
+/** Sanitiza el template_config: deja solo las claves permitidas */
+function sanitizeTemplateConfig(cfg?: TemplateConfigIn) {
+  if (!cfg) return undefined;
+
+  const {
+    bio,
+    mini_bio,
+    photoDataUrl,
+    photo_url,
+    position,
+    cargo,
+    company,
+    empresa,
+    ...rest
+  } = cfg;
+
+  const out: {
+    layout?: "cardA" | "cardB" | "cardC";
+    brand?: { primary?: string; accent?: string };
+    extras?: ExtraIn[];
+  } = {};
+
+  if (typeof rest.layout === "string") {
+    const l = rest.layout.toLowerCase();
+    out.layout =
+      l === "cardb" || l === "card-b"
+        ? "cardB"
+        : l === "cardc" || l === "card-c"
+        ? "cardC"
+        : "cardA";
+  }
+
+  if (rest.brand && typeof rest.brand === "object") {
+    const b = rest.brand as { primary?: unknown; accent?: unknown };
+    out.brand = {
+      primary: typeof b.primary === "string" ? b.primary : undefined,
+      accent: typeof b.accent === "string" ? b.accent : undefined,
+    };
+  }
+
+  if (Array.isArray(rest.extras)) {
+    out.extras = (rest.extras as ExtraIn[]).map((x) => ({
+      kind: String(x.kind),
+      label: x.label ? String(x.label) : undefined,
+      value: String(x.value),
+    }));
+  }
+
+  return out;
+}
+
+type DBPatch = {
+  name?: string;
+  last_name?: string;
+  position?: string | null;
+  company?: string | null;
+  mini_bio?: string | null;
+  whatsapp?: string;
+  email?: string;
+  avatar_url?: string | null;
+  template_config?: ReturnType<typeof sanitizeTemplateConfig>;
+};
+
 export async function POST(req: Request) {
   try {
     const admin = createAdminClient();
-    const body = await req.json();
+    const body = (await req.json()) as UpdateBody;
 
     // 1) Validación de token
     const token = String(body?.token || body?.edit_token || "").trim();
@@ -18,140 +105,91 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2) Obtener perfil actual (id/slug)
-    const { data: current, error: curErr } = await admin
+    // 2) Cargar perfil por edit_token
+    const { data: current, error: selError } = await admin
       .from("profiles")
       .select("id, slug")
       .eq("edit_token", token)
-      .single();
+      .maybeSingle();
 
-    if (curErr || !current) {
+    if (selError) {
       return NextResponse.json(
-        { ok: false, error: "Token inválido" },
+        { ok: false, error: selError.message || "DB error" },
+        { status: 500 }
+      );
+    }
+    if (!current) {
+      return NextResponse.json(
+        { ok: false, error: "Token not found" },
         { status: 404 }
       );
     }
 
-    // 3) Preparar patch: sacar mini_bio de donde venga y limpiar template_config
-    const {
-      template_config: tcfgIn,
-      photoDataUrl: photoRoot,
-      slug: _ignoreSlug, // no permitimos cambiar slug aquí
-      token: _ignoreToken, // evitar que se cuele en el UPDATE
-      edit_token: _ignoreEdit, // evitar que se cuele en el UPDATE
-      bio: bioRoot, // por si alguien envía 'bio' en root
-      mini_bio: miniBioRoot, // root correcto
-      position: positionRoot,
-      company: companyRoot,
-      ...patch
-    } = body || {};
+    // 3) Preparar patch
+    const tcfgIn = body.template_config;
+    const photoRoot = body.photoDataUrl ?? null;
 
-    // ← extrae posibles valores que aún vengan en template_config (legacy)
-    const positionFromTcfg =
-      typeof tcfgIn?.position === "string"
-        ? tcfgIn.position
-        : typeof tcfgIn?.cargo === "string"
-        ? tcfgIn.cargo
-        : undefined;
-
-    const companyFromTcfg =
-      typeof tcfgIn?.company === "string"
-        ? tcfgIn.company
-        : typeof tcfgIn?.empresa === "string"
-        ? tcfgIn.empresa
-        : undefined;
-
-    if (positionRoot !== undefined || positionFromTcfg !== undefined) {
-      (patch as any).position = (positionRoot ?? positionFromTcfg) || null;
+    const patch: DBPatch = {};
+    if (typeof body.name === "string") patch.name = body.name;
+    if (typeof body.last_name === "string") patch.last_name = body.last_name;
+    if (typeof body.position !== "undefined")
+      patch.position = body.position ?? null;
+    if (typeof body.company !== "undefined")
+      patch.company = body.company ?? null;
+    if (typeof body.mini_bio !== "undefined") {
+      patch.mini_bio = body.mini_bio;
+    } else if (typeof body.bio !== "undefined") {
+      patch.mini_bio = body.bio;
     }
-    if (companyRoot !== undefined || companyFromTcfg !== undefined) {
-      (patch as any).company = (companyRoot ?? companyFromTcfg) || null;
-    }
+    if (typeof body.whatsapp === "string") patch.whatsapp = body.whatsapp;
+    if (typeof body.email === "string") patch.email = body.email;
 
-    // Seguridad extra
-    delete (patch as any).token;
-    delete (patch as any).edit_token;
+    const template_config = sanitizeTemplateConfig(tcfgIn);
+    if (template_config) patch.template_config = template_config;
 
-    // Acepta legado: bio/mini_bio dentro de template_config
-    const bioFromTcfg =
-      typeof tcfgIn?.mini_bio === "string"
-        ? tcfgIn.mini_bio
-        : typeof tcfgIn?.bio === "string"
-        ? tcfgIn.bio
-        : undefined;
-
-    const mini_bio =
-      typeof miniBioRoot === "string"
-        ? miniBioRoot
-        : typeof bioRoot === "string"
-        ? bioRoot
-        : bioFromTcfg;
-
-    if (mini_bio !== undefined) {
-      (patch as any).mini_bio = mini_bio; // ← siempre en columna root
-    }
-
-    // Limpiar template_config de claves indebidas
-    const template_config =
-      tcfgIn !== undefined
-        ? {
-            ...tcfgIn,
-            bio: undefined,
-            mini_bio: undefined,
-            photoDataUrl: undefined,
-            photo_url: undefined,
-            position: undefined,
-            cargo: undefined,
-            company: undefined,
-            empresa: undefined,
-          }
-        : undefined;
-
-    if (template_config !== undefined) {
-      (patch as any).template_config = template_config;
-    }
-
-    // 4) UPDATE base (ya sin token/edit_token y con mini_bio correcto)
-    const { error: updErr } = await admin
-      .from("profiles")
-      .update(patch)
-      .eq("edit_token", token);
-
-    if (updErr) {
-      return NextResponse.json(
-        { ok: false, error: updErr.message },
-        { status: 400 }
-      );
-    }
-
-    // 5) Foto (si vino): subir y setear avatar_url (sin bloquear si falla)
-    const photoDataUrl: string | null =
-      photoRoot || tcfgIn?.photoDataUrl || tcfgIn?.photo_url || null;
-
-    if (photoDataUrl) {
+    // 4) Subir avatar si corresponde
+    if (photoRoot) {
       try {
-        const publicUrl = photoDataUrl.startsWith("http")
-          ? photoDataUrl
-          : await uploadAvatarFromDataUrl(
-              photoDataUrl,
-              `profiles/${current.id}`
-            );
+        const publicUrl =
+          typeof photoRoot === "string" && photoRoot.startsWith("http")
+            ? photoRoot
+            : await uploadAvatarFromDataUrl(
+                photoRoot,
+                `profiles/${current.id}`
+              );
+
         if (publicUrl) {
-          await admin
-            .from("profiles")
-            .update({ avatar_url: publicUrl })
-            .eq("id", current.id);
+          patch.avatar_url = publicUrl;
         }
-      } catch {
-        /* no bloquear */
+      } catch (e: unknown) {
+        // no bloquear el flujo por fallo de upload
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn("upload avatar failed:", msg);
       }
     }
 
+    // Si no hay nada que actualizar, responde ok
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ ok: true, slug: current.slug });
+    }
+
+    // 5) Actualizar
+    const { error: upError } = await admin
+      .from("profiles")
+      .update(patch)
+      .eq("id", current.id);
+
+    if (upError) {
+      return NextResponse.json(
+        { ok: false, error: upError.message || "DB error" },
+        { status: 500 }
+      );
+    }
+
+    // Éxito
     return NextResponse.json({ ok: true, slug: current.slug });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || "Server error" },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Server error";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

@@ -1,4 +1,3 @@
-// src/app/preview/[slug]/page.tsx
 import "server-only";
 import Link from "next/link";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
@@ -40,32 +39,27 @@ export default async function PreviewPage(props: {
 
   const fullName = `${prof.name ?? ""} ${prof.last_name ?? ""}`.trim();
 
-  // Avatar con fallback legacy
+  // Avatar con fallback legacy (sin 'any')
+  type TCfgAvatar = {
+    avatar_url?: string;
+    photoUrl?: string;
+    photo_url?: string;
+    photoDataUrl?: string;
+  };
+  const cfgAvatar = (prof.template_config ?? {}) as TCfgAvatar;
+
   const legacyAvatar =
-    (prof.template_config as any)?.avatar_url ||
-    (prof.template_config as any)?.photoUrl ||
-    (prof.template_config as any)?.photo_url ||
-    (prof.template_config as any)?.photoDataUrl;
+    cfgAvatar.avatar_url ||
+    cfgAvatar.photoUrl ||
+    cfgAvatar.photo_url ||
+    cfgAvatar.photoDataUrl;
 
   const avatar =
     prof.avatar_url || legacyAvatar || "/defaults/avatar-placeholder.png";
 
   // WhatsApp + enlaces
   const wa = (prof.whatsapp || "").replace(/\D/g, "");
-  /*const base = process.env.NEXT_PUBLIC_BASE_URL || "";
-  const publicUrl = `${base}/${slug}`;
-  const editUrl = token ? `${base}/edit/${token}` : undefined;
 
-  const waText = [
-    `¡Hola ${fullName || ""}!`,
-    `Tu WOWKard está lista para revisión:`,
-    publicUrl,
-    editUrl ? `Si quieres corregir algo: ${editUrl}` : null,
-    `— Emprendedores WOW!`,
-  ]
-    .filter(Boolean)
-    .join("\n");
-*/
   const base =
     process.env.NEXT_PUBLIC_PUBLIC_BASE_URL || // prod: https://mi.wowkard.es
     process.env.NEXT_PUBLIC_BASE_URL || // fallback (dev): http://localhost:3000
@@ -76,7 +70,6 @@ export default async function PreviewPage(props: {
 
   // Si quieres “solo nombre” sin apellido en el saludo:
   const firstName = (prof.name || "").trim();
-  //const fullName = `${prof.name ?? ""} ${prof.last_name ?? ""}`.trim();
 
   const waText = buildCongratsPreviewMsg({
     fullName: firstName || fullName,

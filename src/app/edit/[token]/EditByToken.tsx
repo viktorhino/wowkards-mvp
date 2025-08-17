@@ -174,8 +174,9 @@ export default function EditByToken({ token }: { token: string }) {
             value: e.value,
           }))
         );
-      } catch (e: any) {
-        setError(e?.message || "Error cargando datos");
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "Error cargando datos";
+        setError(msg);
       } finally {
         setLoading(false);
       }
@@ -242,7 +243,7 @@ export default function EditByToken({ token }: { token: string }) {
       ...prev,
       {
         id,
-        kind: first as any,
+        kind: first as ExtraKind,
         label: first === "otro" ? "" : KIND_LABEL[first],
         value: "",
       },
@@ -312,8 +313,9 @@ export default function EditByToken({ token }: { token: string }) {
       window.location.href = `/preview/${encodeURIComponent(
         json.slug
       )}?edit=${encodeURIComponent(token)}`;
-    } catch (e: any) {
-      alert(e?.message || "Error de red");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Error de red";
+      alert(msg);
       setSaving(false);
     }
   }
@@ -509,7 +511,7 @@ export default function EditByToken({ token }: { token: string }) {
                 const used = new Set(
                   extras
                     .filter((e) => e.id !== row.id && e.kind !== "otro")
-                    .map((e) => e.kind as any)
+                    .map((e) => e.kind as Exclude<ExtraKind, "otro">)
                 );
                 return (
                   <div
@@ -520,7 +522,9 @@ export default function EditByToken({ token }: { token: string }) {
                       className="w-full sm:col-span-4 rounded-xl ring-1 ring-black/10 px-3 py-2"
                       value={row.kind}
                       onChange={(e) =>
-                        updateExtra(row.id, { kind: e.target.value as any })
+                        updateExtra(row.id, {
+                          kind: e.target.value as ExtraKind,
+                        })
                       }
                     >
                       {UNIQUE_KINDS.map((k) => (

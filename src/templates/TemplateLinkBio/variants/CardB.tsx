@@ -1,5 +1,7 @@
 "use client";
 import React from "react";
+import Image from "next/image";
+import Link from "next/link";
 import type { PublicProfile } from "@/templates/types";
 import { getPalette } from "@/templates/types";
 
@@ -64,7 +66,7 @@ const IconMask = ({ src, color }: { src: string; color: string }) => (
   />
 );
 
-const iconPath = {
+const ICONS = {
   wa: "/icons/whatsapp.svg",
   email: "/icons/email.svg",
   share: "/icons/share.svg",
@@ -74,9 +76,11 @@ const iconPath = {
   x: "/icons/x.svg",
   direccion: "/icons/direccion.svg",
   link: "/icons/link.svg",
-};
+} as const;
 
 /* ----------------------------- component ----------------------------- */
+type ExtraIn = { kind?: string; label?: string; value?: string };
+
 export default function CardB({ profile }: { profile: PublicProfile }) {
   const brand = getPalette(profile.template_config);
   const primary = brand.primary || "#FFC400";
@@ -102,22 +106,33 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
     profile.slug || ""
   )}`;
 
-  // Extras (ig, fb, tiktok, x, direccion, website…)
-  const extras: Array<{ kind?: string; label?: string; value?: string }> =
-    Array.isArray(profile?.template_config?.extras)
-      ? (profile.template_config.extras as any[])
-      : [];
+  // Extras (ig, fb, tiktok, x, direccion…)
+  const extras: ExtraIn[] = Array.isArray(profile?.template_config?.extras)
+    ? (profile.template_config.extras as unknown[])
+        .map((x) => {
+          if (!x || typeof x !== "object") return undefined;
+          const o = x as Record<string, unknown>;
+          const kind = typeof o.kind === "string" ? o.kind : undefined;
+          const label = typeof o.label === "string" ? o.label : undefined;
+          const value = typeof o.value === "string" ? o.value : undefined;
+          return { kind, label, value } as ExtraIn;
+        })
+        .filter((x): x is ExtraIn => !!x)
+    : [];
 
-  // Añadir website si viene en profile
-  if (profile.website) {
-    extras.push({
-      kind: "website",
-      label: "MI SITIO WEB",
-      value: profile.website.startsWith("http")
-        ? profile.website
-        : `https://${profile.website}`,
-    });
-  }
+  // Añadir website si viene en profile (sin mutar el array tipado)
+  const extrasWithWebsite: ExtraIn[] = profile.website
+    ? [
+        ...extras,
+        {
+          kind: "website",
+          label: "MI SITIO WEB",
+          value: profile.website.startsWith("http")
+            ? profile.website
+            : `https://${profile.website}`,
+        },
+      ]
+    : extras;
 
   /* --------- URL al endpoint /api/vcard (como en CardA) ---------------- */
   const intlPhone = phone
@@ -162,9 +177,9 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
           type: "text/x-vcard",
         });
 
-        // @ts-ignore
+        // @ts-expect-error - canShare(files) no está tipado en algunos TS
         if (navigator.canShare?.({ files: [file] })) {
-          // @ts-ignore
+          // @ts-expect-error - share(files) tampoco está tipado en algunas versiones
           await navigator.share({
             title: `Contacto de ${fullName}`,
             text: `Guardar contacto de ${fullName}`,
@@ -190,13 +205,17 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
             {/* Foto grande circular */}
             <div className="w-full flex justify-center">
               <div className="relative">
-                <div className="w-[200px] h-[200px] rounded-full border-3 border-white shadow-xl overflow-hidden bg-white">
-                  <img
+                <div className="w-[200px] h-[200px] rounded-full border-3 border-white shadow-xl overflow-hidden bg-white relative">
+                  <Image
                     src={
                       profile.avatar_url || "/defaults/avatar-placeholder.png"
                     }
                     alt={fullName}
-                    className="w-full h-full object-cover"
+                    fill
+                    className="object-cover"
+                    sizes="200px"
+                    unoptimized
+                    priority
                   />
                 </div>
               </div>
@@ -232,7 +251,7 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
                 }`}
                 style={{ background: secondary, color: "#fff" }}
               >
-                <IconMask src={iconPath.wa} color="#fff" />
+                <IconMask src={ICONS.wa} color="#fff" />
                 <span className="font-pop text-[12px] mt-1">Hablemos YA!</span>
               </a>
 
@@ -244,7 +263,7 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
                 }`}
                 style={{ background: secondary, color: "#fff" }}
               >
-                <IconMask src={iconPath.email} color="#fff" />
+                <IconMask src={ICONS.email} color="#fff" />
                 <span className="font-pop text-[12px] mt-1">Escríbeme</span>
               </a>
 
@@ -254,7 +273,7 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
                 className="rounded-[18px] py-4 grid place-items-center shadow-md"
                 style={{ background: secondary, color: "#fff" }}
               >
-                <IconMask src={iconPath.share} color="#fff" />
+                <IconMask src={ICONS.share} color="#fff" />
                 <span className="font-pop text-[12px] mt-1">Compartir</span>
               </a>
             </div>
@@ -264,12 +283,12 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
         {/* Zona baja gris: badges blancos con franja izquierda amarilla */}
         <div className="px-5 py-6 bg-[#e9e9e9]">
           <div className="flex flex-col gap-4">
-            {extras.map((ex, i) => {
+            {extrasWithWebsite.map((ex, i) => {
               if (!ex?.value) return null;
 
               const kind = (ex.kind || "").toLowerCase();
               let title = ex.label || "";
-              let value = ex.value.trim();
+              const value = ex.value.trim(); // prefer-const
               let href = value;
 
               if (kind === "instagram" && !/^https?:\/\//i.test(value)) {
@@ -306,7 +325,8 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
                 title = title || "ENLACE";
               }
 
-              const icon = (iconPath as any)[kind] || iconPath.link;
+              const icon =
+                (ICONS as Record<string, string>)[kind] ?? ICONS.link;
 
               return (
                 <a
@@ -340,12 +360,12 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
 
           {/* Línea + badge final */}
           <div className="mt-8 border-t border-gray-300 pt-4 flex justify-center">
-            <a
+            <Link
               href="/sede-wow"
               className="inline-block bg-gray-200 text-gray-800 px-3 py-1 rounded-full text-[12px] font-semibold"
             >
               Crea tu sede W🤩W!
-            </a>
+            </Link>
           </div>
         </div>
 
@@ -363,10 +383,13 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
           aria-label="Guardar contacto"
         >
           <div className="flex flex-col items-center justify-center">
-            <img
+            <Image
               src="/icons/savecontact.svg"
               alt=""
+              width={40}
+              height={40}
               className="h-10 w-10 mb-0"
+              priority
             />
             <span className="font-pop font-normal text-black text-[10px] leading-tight text-center -mt-1">
               Guardar

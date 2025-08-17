@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import Image from "next/image";
 import { getPalette, PublicProfile } from "@/templates/types";
 
 export default function CardC({ profile }: { profile: PublicProfile }) {
@@ -37,10 +38,14 @@ export default function CardC({ profile }: { profile: PublicProfile }) {
           />
         </svg>
         <div className="absolute left-6 top-6 w-24 h-24 rounded-full ring-4 ring-white overflow-hidden bg-white">
-          <img
+          <Image
             src={profile.avatar_url || "/defaults/avatar-placeholder.png"}
             alt={full}
+            width={96}
+            height={96}
             className="w-full h-full object-cover"
+            unoptimized
+            priority
           />
         </div>
       </div>

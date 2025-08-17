@@ -34,7 +34,7 @@ export default async function PublicCard({
   const supabase = supabaseAdmin();
 
   // 1) Intentar cargar el perfil público por slug
-  const { data: profile, error } = await supabase
+  const { data: profile } = await supabase
     .from("profiles")
     .select(
       [
@@ -88,11 +88,11 @@ export default async function PublicCard({
 
   // 3) Perfil encontrado → renderizar template
   /*const key: TemplateKey = "TemplateLinkBio";
-  const mod = await templateRegistry[key]();
-  const Component = mod.default as React.ComponentType<{
-    profile: PublicProfile;
-  }>;
-  */
+     const mod = await templateRegistry[key]();
+     const Component = mod.default as React.ComponentType<{
+       profile: PublicProfile;
+     }>;
+     */
   // 3) Perfil encontrado -> renderizar template según template_config.layout
   const key: TemplateKey = layoutToKey(profile.template_config);
   const mod = await templateRegistry[key]();

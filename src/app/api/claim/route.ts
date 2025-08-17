@@ -67,9 +67,12 @@ export async function POST(req: Request) {
     }
 
     // 3) Genera edit_token
-    // @ts-ignore
-    const edit_token: string = (globalThis.crypto?.randomUUID?.() ||
-      Math.random().toString(36).slice(2)) as string;
+    // helper robusto para token (sin any, sin ts-ignore)
+    function generateEditToken(): string {
+      // En Node 18+ (Vercel) existe crypto.randomUUID; si no, fallback seguro
+      const g = globalThis as { crypto?: { randomUUID?: () => string } };
+      return g.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+    }
 
     // 4) Inserta perfil sin avatar_url (lo subimos luego)
     const { data: inserted, error: insErr } = await admin
@@ -85,7 +88,7 @@ export async function POST(req: Request) {
         mini_bio: safe<string>(mini_bio, null),
         template_config: template_config ?? null,
         avatar_url: null,
-        edit_token,
+        edit_token: generateEditToken(),
         ...rest,
       })
       .select("id, slug, edit_token")
@@ -114,9 +117,9 @@ export async function POST(req: Request) {
           .update({ avatar_url: publicUrl })
           .eq("id", inserted.id);
       }
-    } catch (e: any) {
-      console.warn("upload avatar failed:", e?.message || e);
-      // no bloquea el flujo
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("upload avatar failed:", msg);
     }
 
     // 6) Marca short_code como usado (status + claimed + claimed_at + slug)
@@ -142,10 +145,8 @@ export async function POST(req: Request) {
 
     // 7) OK
     return NextResponse.json({ ok: true, slug: inserted.slug, edit_token });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || "Server error" },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Server error";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
+
+type ExtraItem = { type: string; value: string };
+
+type TemplateConfig = {
+  extra?: ExtraItem[];
+  avatar_url?: string | null;
+} & Record<string, unknown>;
 
 type Profile = {
   id: string;
@@ -11,10 +19,8 @@ type Profile = {
   whatsapp: string | null;
   email: string | null;
   mini_bio: string | null;
-  template_config: any | null;
+  template_config: TemplateConfig | null;
 };
-
-type ExtraItem = { type: string; value: string };
 
 const EXTRA_OPTIONS = [
   { key: "direccion", label: "Dirección" },
@@ -93,7 +99,7 @@ export default function EditClient({
   // Estado
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [viewLink, setViewLink] = useState<string | null>(null); // <-- nuevo
+  const [viewLink, setViewLink] = useState<string | null>(null);
 
   const addExtra = () => {
     if (extras.length >= MAX_EXTRAS) return;
@@ -152,7 +158,7 @@ export default function EditClient({
       const newAvatarUrl = await uploadAvatarIfAny(fileAvatar);
 
       // template_config resultante
-      const template_config = {
+      const template_config: TemplateConfig = {
         ...(profile.template_config || {}),
         extra: extras,
         avatar_url: newAvatarUrl || null,
@@ -178,8 +184,9 @@ export default function EditClient({
       setMsg("Guardado");
       if (j.link) setViewLink(j.link as string);
       setFileAvatar(null);
-    } catch (e: any) {
-      setMsg(e.message || "No se pudo actualizar.");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "No se pudo actualizar.";
+      setMsg(message);
     } finally {
       setSaving(false);
     }
@@ -192,14 +199,17 @@ export default function EditClient({
 
         {/* Avatar actual / preview */}
         <div className="flex items-center gap-3">
-          <img
-            src={avatarUrl || "/defaults/avatar.png"}
-            onError={(e) => {
-              e.currentTarget.src = "/defaults/avatar.png";
-            }}
-            alt="avatar"
-            className="w-16 h-16 rounded-full object-cover border"
-          />
+          <div className="w-16 h-16 rounded-full overflow-hidden border">
+            <Image
+              src={avatarUrl || "/defaults/avatar.png"}
+              alt="avatar"
+              width={64}
+              height={64}
+              className="w-16 h-16 rounded-full object-cover"
+              unoptimized
+              onError={() => setAvatarUrl("/defaults/avatar.png")}
+            />
+          </div>
           <div className="flex gap-2">
             <label className="px-3 py-2 border rounded-md cursor-pointer hover:bg-gray-50">
               Subir imagen
@@ -261,7 +271,7 @@ export default function EditClient({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span>Mini‑biografía (máx. 250)</span>
+          <span>Mini-biografía (máx. 250)</span>
           <textarea
             className="border rounded-md p-2"
             rows={3}

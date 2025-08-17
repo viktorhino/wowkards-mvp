@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
+import Image from "next/image";
 import type { TemplateLayout } from "@/templates/types";
 import { suggestSlug, normalizeSlug } from "@/lib/slug";
 import { normalizeWhatsapp } from "@/lib/phone";
@@ -591,10 +593,10 @@ export default function ClaimForm({ code }: { code: string }) {
                 </label>
 
                 {extras.map((row) => {
-                  const usedInOthers = new Set(
+                  const usedInOthers = new Set<Exclude<ExtraKind, "otro">>(
                     extras
                       .filter((e) => e.id !== row.id && e.kind !== "otro")
-                      .map((e) => e.kind as any)
+                      .map((e) => e.kind as Exclude<ExtraKind, "otro">)
                   );
                   return (
                     <div
@@ -604,8 +606,10 @@ export default function ClaimForm({ code }: { code: string }) {
                       <select
                         className="bg-white text-slate-900 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 col-span-4"
                         value={row.kind}
-                        onChange={(e) =>
-                          updateExtra(row.id, { kind: e.target.value as any })
+                        onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                          updateExtra(row.id, {
+                            kind: e.target.value as ExtraKind,
+                          })
                         }
                       >
                         {UNIQUE_KINDS.map((k) => (
@@ -736,11 +740,15 @@ export default function ClaimForm({ code }: { code: string }) {
                 </div>
 
                 {photoDataUrl && (
-                  <img
-                    src={photoDataUrl}
-                    alt="preview"
-                    className="mt-3 w-32 h-32 object-cover rounded-full border border-white/60 shadow-sm"
-                  />
+                  <div className="mt-3 relative w-32 h-32">
+                    <Image
+                      src={photoDataUrl}
+                      alt="preview"
+                      fill
+                      unoptimized
+                      className="object-cover rounded-full border border-white/60 shadow-sm"
+                    />
+                  </div>
                 )}
 
                 <div className="mt-4">
@@ -750,7 +758,9 @@ export default function ClaimForm({ code }: { code: string }) {
                   <select
                     className="bg-white text-slate-900 rounded-xl px-3 py-2 ring-1 ring-black/10 focus:outline-none focus:ring-2 focus:ring-black/50 w-full"
                     value={layout}
-                    onChange={(e) => setLayout(e.target.value as any)}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                      setLayout(e.target.value as TemplateLayout)
+                    }
                   >
                     {LAYOUTS.map((l) => (
                       <option key={l} value={l}>

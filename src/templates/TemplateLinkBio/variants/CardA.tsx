@@ -1,5 +1,7 @@
 "use client";
 import React from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { getPalette, PublicProfile } from "@/templates/types";
 
 /* Utils -------------------------------------------------------------- */
@@ -147,6 +149,9 @@ function pickAccessibleIconColor(
   return ratios.sort((a, b) => b.r - a.r)[0].c;
 }
 
+/* Types para extras -------------------------------------------------- */
+type ExtraIn = { kind?: string; label?: string; value?: string };
+
 /* Component ---------------------------------------------------------- */
 export default function CardA({ profile }: { profile: PublicProfile }) {
   const { primary, accent: secondary } = getPalette(profile.template_config);
@@ -164,11 +169,18 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
     ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hola ${full}`)}`
     : undefined;
 
-  // Extras
-  const extras: Array<
-    { kind?: string; label?: string; value?: string } | undefined
-  > = Array.isArray(profile?.template_config?.extras)
-    ? (profile.template_config.extras as any[])
+  // Extras (sin any, saneados desde unknown)
+  const extras: ExtraIn[] = Array.isArray(profile?.template_config?.extras)
+    ? (profile.template_config.extras as unknown[])
+        .map((x) => {
+          if (!x || typeof x !== "object") return undefined;
+          const o = x as Record<string, unknown>;
+          const kind = typeof o.kind === "string" ? o.kind : undefined;
+          const label = typeof o.label === "string" ? o.label : undefined;
+          const value = typeof o.value === "string" ? o.value : undefined;
+          return { kind, label, value } as ExtraIn;
+        })
+        .filter((x): x is ExtraIn => !!x)
     : [];
 
   // CTAs a renderizar (orden: WA → email → extras → website)
@@ -305,9 +317,9 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
           type: "text/x-vcard",
         });
 
-        // @ts-ignore - canShare(files) no está tipado en TS viejo
+        // @ts-expect-error - canShare(files) no está tipado en TS viejo
         if (navigator.canShare?.({ files: [file] })) {
-          // @ts-ignore
+          // @ts-expect-error - share(files) tampoco está tipado en algunas versiones
           await navigator.share({
             title: `Contacto de ${full}`,
             text: `Guardar contacto de ${full}`,
@@ -316,7 +328,9 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
           return;
         }
       }
-    } catch (_) {}
+    } catch {
+      // ignorar y seguir con fallback
+    }
 
     window.location.href = vcardUrl;
   }
@@ -335,11 +349,14 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
             <div className="h-[150px] w-full" />
             {/* Foto píldora */}
             <div className="absolute left-1/2 bottom-0 translate-y-[30%] md:translate-y-[28%] -translate-x-1/2">
-              <div className="w-[120px] h-[160px] md:w-[132px] md:h-[188px] rounded-[999px] border-3 border-white shadow-xl overflow-hidden bg-white">
-                <img
+              <div className="w-[120px] h-[160px] md:w-[132px] md:h-[188px] rounded-[999px] border-3 border-white shadow-xl overflow-hidden bg-white relative">
+                <Image
                   src={profile.avatar_url || "/defaults/avatar-placeholder.png"}
                   alt={full}
-                  className="w-full h-full object-cover"
+                  fill
+                  className="object-cover"
+                  sizes="(max-width: 768px) 120px, 132px"
+                  priority
                 />
               </div>
             </div>
@@ -376,13 +393,12 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
 
           {/* CTAs */}
           <div className="px-3 pb-6 flex flex-col items-center gap-3 md:px-4 w-9/10 mx-auto">
-            {ctas.map((b, idx) => {
+            {ctas.map((b) => {
               // Forzamos TODOS los botones a color secundario (negro)
               const usePrimary = false;
               const bg = usePrimary ? primary : secondarySafe; // -> siempre secundario
               const contrast = usePrimary ? secondarySafe : primary; // -> siempre primario
 
-              // (queda por si se usa en el futuro)
               const iconColor = pickAccessibleIconColor(bg, contrast, 3);
 
               return (
@@ -398,7 +414,7 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
                     className="inline-grid place-items-center h-9 w-9 mr-3 rounded-full border-2"
                     style={{ borderColor: contrast }}
                   >
-                    <IconMask src={b.icon} color={contrast} />
+                    <IconMask src={b.icon} color={iconColor} />
                   </span>
                   <span className="uppercase font-pop font-normal flex-1 text-left tracking-wide text-[16px] md:text-[18px] ">
                     {b.label}
@@ -411,12 +427,12 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
           {/* Línea + badge final */}
           <div className="px-6 pb-6">
             <div className="border-t border-gray-200 pt-4 flex justify-center">
-              <a
+              <Link
                 href="/sede-wow"
                 className="inline-block bg-gray-200 text-gray-500 px-3 py-1 rounded-full text-[11px] md:text-xs font-normal"
               >
                 Crea tu sede W🤩W!
-              </a>
+              </Link>
             </div>
           </div>
         </div>
@@ -436,10 +452,13 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
         }}
       >
         <div className="flex flex-col items-center justify-center">
-          <img
+          <Image
             src="/icons/guardarusuario.svg"
             alt=""
+            width={40}
+            height={40}
             className="h-10 w-10 mb-0"
+            priority
           />
           <span className="font-pop font-normal text-black text-[10px] leading-tight text-center -mt-1 leading-{10px}">
             Guardar
