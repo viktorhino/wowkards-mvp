@@ -1,31 +1,17 @@
-import type { TemplateKey } from "@/templates/types";
+// src/templates/registry.ts
+import type React from "react";
 
-// Registry de plantillas.
-// - Mantenemos "TemplateLinkBio" por compatibilidad, apuntando a CardA.
-// - Añadimos "CardA" y "CardB" explícitamente.
-// - "CardC" por ahora fallback a CardA (para no romper si aún no existe).
+// evita `any` aquí:
+type LazyComp = Promise<{
+  default: React.ComponentType<Record<string, unknown>>;
+}>;
 
-type Loader = () => Promise<{ default: React.ComponentType<any> }>;
+const registry = {
+  TemplateLinkBio: (): LazyComp => import("./TemplateLinkBio/variants/CardA"),
+  CardA: (): LazyComp => import("./TemplateLinkBio/variants/CardA"),
+  CardB: (): LazyComp => import("./TemplateLinkBio/variants/CardB"),
+  // si tienes CardC real, cambia la ruta; si no, puedes dejar CardA
+  CardC: (): LazyComp => import("./TemplateLinkBio/variants/CardA"),
+} as const;
 
-export const templateRegistry: Record<TemplateKey, Loader> = {
-  TemplateLinkBio: () =>
-    import("./TemplateLinkBio/variants/CardA") as Promise<{
-      default: React.ComponentType<any>;
-    }>,
-
-  CardA: () =>
-    import("./TemplateLinkBio/variants/CardA") as Promise<{
-      default: React.ComponentType<any>;
-    }>,
-
-  CardB: () =>
-    import("./TemplateLinkBio/variants/CardB") as Promise<{
-      default: React.ComponentType<any>;
-    }>,
-
-  // Fallback mientras no exista CardC.tsx:
-  CardC: () =>
-    import("./TemplateLinkBio/variants/CardA") as Promise<{
-      default: React.ComponentType<any>;
-    }>,
-};
+export default registry;
