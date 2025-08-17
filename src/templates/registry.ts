@@ -9,23 +9,23 @@ type Loader = () => Promise<{ default: React.ComponentType<any> }>;
 
 export const templateRegistry: Record<TemplateKey, Loader> = {
   TemplateLinkBio: () =>
-    import("@/templates/TemplateLinkBio/variants/CardA") as Promise<{
+    import("./TemplateLinkBio/variants/CardA") as Promise<{
       default: React.ComponentType<any>;
     }>,
 
   CardA: () =>
-    import("@/templates/TemplateLinkBio/variants/CardA") as Promise<{
+    import("./TemplateLinkBio/variants/CardA") as Promise<{
       default: React.ComponentType<any>;
     }>,
 
   CardB: () =>
-    import("@/templates/TemplateLinkBio/variants/CardB") as Promise<{
+    import("./TemplateLinkBio/variants/CardB") as Promise<{
       default: React.ComponentType<any>;
     }>,
 
   // Fallback mientras no exista CardC.tsx:
   CardC: () =>
-    import("@/templates/TemplateLinkBio/variants/CardA") as Promise<{
+    import("./TemplateLinkBio/variants/CardA") as Promise<{
       default: React.ComponentType<any>;
     }>,
 };
