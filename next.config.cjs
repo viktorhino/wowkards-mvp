@@ -1,6 +1,8 @@
 // next.config.mjs  (ESM)
+/** @type {import('next').NextConfig} */
+
 const nextConfig = {
-  reactStrictMode: true,
+  //reactStrictMode: true,
 
   // Si aún tienes warnings de ESLint/TS en build, mantenlo en true; si ya está limpio, pon false.
   eslint: { ignoreDuringBuilds: true },
@@ -15,4 +17,6 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
+
+//export default nextConfig;
