@@ -14,14 +14,14 @@ export async function GET(req: NextRequest) {
   const p = url.searchParams;
 
   // Parámetros
-  const fullName = safe(p.get("fullName"));
-  const phone = safe(p.get("phone")); // en formato internacional +57...
-  const email = safe(p.get("email"));
-  const org = safe(p.get("org"));
-  const title = safe(p.get("title"));
-  const website = safe(p.get("url"));
-  const note = safe(p.get("note"));
-  const photoUrl = safe(p.get("photo")); // URI a imagen (Supabase URL)
+  const fullName = safe(p.get("fullName") ?? undefined);
+  const phone = safe(p.get("phone") ?? undefined); // en formato internacional +57...
+  const email = safe(p.get("email") ?? undefined);
+  const org = safe(p.get("org") ?? undefined);
+  const title = safe(p.get("title") ?? undefined);
+  const website = safe(p.get("url") ?? undefined);
+  const note = safe(p.get("note") ?? undefined);
+  const photoUrl = safe(p.get("photo") ?? undefined); // URI a imagen (Supabase URL)
 
   if (!fullName) {
     return new Response("Missing fullName", { status: 400 });

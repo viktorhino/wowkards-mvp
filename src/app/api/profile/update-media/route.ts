@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     if (error) throw error;
 
     return NextResponse.json({ ok: true });
-  } catch (e: unknown) {
+  } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e.message ?? "update error" },
       { status: 500 }

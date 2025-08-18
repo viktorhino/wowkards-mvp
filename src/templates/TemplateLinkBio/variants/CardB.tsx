@@ -177,9 +177,7 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
           type: "text/x-vcard",
         });
 
-        // @ts-expect-error - canShare(files) no está tipado en algunos TS
         if (navigator.canShare?.({ files: [file] })) {
-          // @ts-expect-error - share(files) tampoco está tipado en algunas versiones
           await navigator.share({
             title: `Contacto de ${fullName}`,
             text: `Guardar contacto de ${fullName}`,

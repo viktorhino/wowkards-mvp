@@ -102,14 +102,24 @@ export async function POST(req: Request) {
     }
 
     // 5) Sube avatar (si viene) y actualiza avatar_url
+    // 5) Sube avatar (si viene) y actualiza avatar_url
     try {
-      const publicUrl =
-        typeof photoDataUrl === "string" && photoDataUrl.startsWith("http")
-          ? photoDataUrl
-          : await uploadAvatarFromDataUrl(
-              photoDataUrl,
-              `profiles/${inserted.id}`
-            );
+      let publicUrl: string | null = null;
+
+      if (typeof photoDataUrl === "string") {
+        const s = photoDataUrl.trim(); // ✅ aquí s es string
+
+        if (s.startsWith("http")) {
+          // ya viene url pública
+          publicUrl = s;
+        } else if (s !== "") {
+          // es un dataURL base64 -> subir
+          publicUrl = await uploadAvatarFromDataUrl(
+            s, // ✅ string garantizado
+            `profiles/${inserted.id}`
+          );
+        }
+      }
 
       if (publicUrl) {
         await admin
@@ -117,9 +127,10 @@ export async function POST(req: Request) {
           .update({ avatar_url: publicUrl })
           .eq("id", inserted.id);
       }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn("upload avatar failed:", msg);
+    } catch (e) {
+      const err = e as { message?: string };
+      console.warn("upload avatar failed:", err?.message ?? e);
+      // no bloquea el flujo
     }
 
     // 6) Marca short_code como usado (status + claimed + claimed_at + slug)
@@ -138,12 +149,15 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ok: true,
         slug: inserted.slug,
-        edit_token,
+        edit_token: inserted?.edit_token ?? null,
         warn: updErr.message,
       });
     }
 
     // 7) OK
+    const edit_token =
+      (inserted as { edit_token?: string | null })?.edit_token ?? null;
+
     return NextResponse.json({ ok: true, slug: inserted.slug, edit_token });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Server error";

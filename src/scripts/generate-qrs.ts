@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from "fs";
 import { URL } from "url";
-import { toFile } from "qrcode";
+import * as QRCode from "qrcode";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 const OUT = "public/qr";
@@ -10,7 +10,7 @@ if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
 async function make(code: string) {
   const url = new URL(`/${code}`, BASE).toString();
   const path = `${OUT}/${code}.png`;
-  await toFile(path, url, { margin: 1, scale: 6 });
+  await QRCode.toFile(path, url, { margin: 1, scale: 6 });
   console.log("QR generado:", path);
 }
 
