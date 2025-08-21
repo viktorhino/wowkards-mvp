@@ -167,7 +167,7 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
   const phone = cleanPhone(profile.whatsapp);
   const waHref = phone
     ? `https://wa.me/${phone}?text=${encodeURIComponent(
-        `Hola ${profile.name}. Me encanta tu tarjeta digital de su Sede WOW!`
+        `Hola ${profile.name}. Me encanta la tarjeta digital de tu Sede WOW!`
       )}`
     : undefined;
 
@@ -196,7 +196,7 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
   if (waHref)
     ctas.push({
       key: "wa",
-      label: "HABLEMOS YA",
+      label: "HABLEMOS!",
       href: waHref,
       icon: "/icons/whatsapp.svg",
     });

@@ -96,7 +96,7 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
   const phone = cleanPhone(profile.whatsapp);
   const waHref = phone
     ? `https://wa.me/${phone}?text=${encodeURIComponent(
-        `Hola ${profile.name}. Me encanta tu tarjeta digital de su Sede WOW!`
+        `Hola ${profile.name}. Me encanta la tarjeta digital de tu Sede WOW!`
       )}`
     : undefined;
 
@@ -252,7 +252,7 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
                 style={{ background: secondary, color: "#fff" }}
               >
                 <IconMask src={ICONS.wa} color="#fff" />
-                <span className="font-pop text-[12px] mt-1">Hablemos YA!</span>
+                <span className="font-pop text-[12px] mt-1">Hablemos!</span>
               </a>
 
               {/* Email */}

@@ -1,40 +1,97 @@
-/* Página pública: obtiene perfil (incluye avatar_url) y, si no hay,
-   cae a ClaimForm cuando el slug es un código sin reclamar. */
+/* Página pública:
+   - Si slug tiene exactamente 4 alfanuméricos -> CÓDIGO:
+       * Busca en short_codes por code.
+       * Si está UNCLAIMED -> muestra ClaimForm.
+       * Si está CLAIMED -> REDIRECT a "/<short_codes.slug>" (cambia la URL) y allí se renderiza TemplateLinkBio.
+   - Si slug > 4 -> SLUG de perfil:
+       * Busca en profiles por slug y renderiza TemplateLinkBio.
+*/
 
 import React from "react";
+import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import ClaimForm from "@/app/(claim)/components/ClaimForm";
 import { registry as templateRegistry } from "@/templates/registry";
-
 import type { PublicProfile, TemplateConfig } from "@/templates/types";
 
-// ---- Tipos de props (tu build espera Promise en params) ----
 type PageParams = { slug: string };
 type PageProps = { params: Promise<PageParams> };
-type TemplateKey = keyof typeof templateRegistry;
 
-// ---- Type guards ----
+// Si en tu proyecto `registry` es export default, cambia a:
+//   import templateRegistry from "@/templates/registry"
+type TemplateRegistry = typeof templateRegistry;
+type TemplateKey = keyof TemplateRegistry;
+
+// --- Helpers ---
 function isObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object";
 }
 function isPublicProfile(v: unknown): v is PublicProfile {
   return isObject(v) && typeof (v as any).slug === "string";
 }
-
-// ---- Mapeo de layout -> clave del registry ----
+// Mapea layout -> clave del registry
 const layoutToKey = (cfg?: TemplateConfig): TemplateKey => {
-  const layout = (cfg?.layout ?? "cardA").toLowerCase();
-  if (layout === "cardb" || layout === "card-b") return "cardB";
-  if (layout === "cardc" || layout === "card-c") return "cardC";
-  return "cardA";
+  const raw = String((cfg as any)?.layout ?? "cardA");
+  const norm = raw.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  if (norm === "cardb") return "cardB" as TemplateKey;
+  if (norm === "cardc") return "cardC" as TemplateKey;
+  return "cardA" as TemplateKey;
 };
 
 export default async function Page({ params }: PageProps) {
-  const { slug } = await params; // en tu setup es Promise<PageParams>
-
+  // En tu build, params puede ser Promise -> hay que await
+  const { slug } = await params;
   const supabase = supabaseAdmin();
 
-  // 1) Intentar cargar perfil por slug
+  // 0) ¿Es código corto? (exactamente 4 alfanuméricos)
+  const isFourCharCode = /^[a-z0-9]{4}$/i.test(slug);
+
+  if (isFourCharCode) {
+    // 1) Tratar como CÓDIGO
+    const { data: sc, error: scErr } = await supabase
+      .from("short_codes")
+      .select("code, claimed, status, slug")
+      .eq("code", slug)
+      .maybeSingle();
+
+    // Código inexistente
+    if (!sc || scErr) {
+      return (
+        <main className="max-w-5xl mx-auto p-6">
+          No se encontró la WOWKard.
+        </main>
+      );
+    }
+
+    const isUnclaimed =
+      sc.claimed === false ||
+      sc.claimed === null ||
+      sc.status === "unclaimed" ||
+      sc.status === null;
+
+    if (isUnclaimed) {
+      // Disponible -> formulario de reclamo
+      return (
+        <main className="min-h-screen">
+          <div className="mx-auto max-w-3xl">
+            <ClaimForm code={slug} />
+          </div>
+        </main>
+      );
+    }
+
+    // 2) Código EXISTE y está CLAIMED -> redirigir a la URL canónica /<slugDelPerfil>
+    if (sc.slug) {
+      redirect(`/${encodeURIComponent(sc.slug)}`);
+    }
+
+    // Si no hay slug asociado, no podemos resolver destino
+    return (
+      <main className="max-w-5xl mx-auto p-6">No se encontró la WOWKard.</main>
+    );
+  }
+
+  // 3) Tratar como SLUG de perfil (más de 4)
   const { data: profileRaw } = await supabase
     .from("profiles")
     .select(
@@ -58,40 +115,14 @@ export default async function Page({ params }: PageProps) {
     ? (profileRaw as PublicProfile)
     : null;
 
-  // 2) Si no hay perfil, probar como código sin reclamar
   if (!profile) {
-    const { data: sc } = await supabase
-      .from("short_codes")
-      .select("code, claimed, status")
-      .eq("code", slug)
-      .maybeSingle();
-
-    const isUnclaimed =
-      !!sc &&
-      (sc.claimed === false ||
-        sc.claimed === null ||
-        sc.status === "unclaimed" ||
-        sc.status === null);
-
-    if (isUnclaimed) {
-      return (
-        <main className="min-h-screen">
-          <div className="mx-auto max-w-3xl">
-            <ClaimForm code={slug} />
-          </div>
-        </main>
-      );
-    }
-
     return (
       <main className="max-w-5xl mx-auto p-6">No se encontró la WOWKard.</main>
     );
   }
 
-  // 3) Perfil encontrado → renderizar template
-  const key: TemplateKey = layoutToKey(profile.template_config);
-
-  // El registro puede devolver un módulo ESM (con .default) o el componente directo.
+  // Renderizar TemplateLinkBio con el layout del perfil
+  const key = layoutToKey(profile.template_config);
   const entry = await templateRegistry[key]();
   const Component =
     (entry as any).default ??
