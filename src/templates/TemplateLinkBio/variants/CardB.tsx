@@ -95,7 +95,9 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
   // WhatsApp
   const phone = cleanPhone(profile.whatsapp);
   const waHref = phone
-    ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hola ${fullName}`)}`
+    ? `https://wa.me/${phone}?text=${encodeURIComponent(
+        `Hola ${profile.name}. Me encanta tu tarjeta digital de su Sede WOW!`
+      )}`
     : undefined;
 
   // Email
@@ -265,9 +267,9 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
                 <span className="font-pop text-[12px] mt-1">Escríbeme</span>
               </a>
 
-              {/* Compartir (a página intermedia) */}
+              {/* Compartir (a página intermedia) de momento no funciona luego debe ir href={shareHref} */}
               <a
-                href={shareHref}
+                href="#"
                 className="rounded-[18px] py-4 grid place-items-center shadow-md"
                 style={{ background: secondary, color: "#fff" }}
               >

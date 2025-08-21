@@ -166,7 +166,9 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
   // WhatsApp
   const phone = cleanPhone(profile.whatsapp);
   const waHref = phone
-    ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hola ${full}`)}`
+    ? `https://wa.me/${phone}?text=${encodeURIComponent(
+        `Hola ${profile.name}. Me encanta tu tarjeta digital de su Sede WOW!`
+      )}`
     : undefined;
 
   // Extras (sin any, saneados desde unknown)

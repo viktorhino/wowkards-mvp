@@ -109,7 +109,7 @@ export default async function SedeWOW() {
             </div>
 
             {/* CTA Buttons */}
-            <div className="mt-8 flex flex-col md:flex-row gap-3 md:gap-4">
+            <div className="mt-8 flex flex-col md:flex-row gap-3 md:gap-4 justify-center">
               <a
                 href={waUrl}
                 target="_blank"
@@ -120,7 +120,7 @@ export default async function SedeWOW() {
                 💬 Habla con un asesor
               </a>
 
-              {/* Server Action: toma un código libre y redirige a /claim?code=... */}
+              {/* Server Action: toma un código libre y redirige a /claim?code=...
               <form action={createWithFreeCode} className="w-full md:w-1/2">
                 <button
                   type="submit"
@@ -129,7 +129,7 @@ export default async function SedeWOW() {
                 >
                   🚀 Crear mi WOWKard gratis
                 </button>
-              </form>
+              </form>*/}
             </div>
 
             {/* FAQ breve */}
