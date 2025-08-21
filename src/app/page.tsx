@@ -19,7 +19,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#ffd000]">
-      <div className="flex items-center justify-center min-h-screen p-6">
+      <div className="flex items-center justify-center min-h-screen p-2">
         <section className="w-full max-w-xl rounded-3xl bg-white/80 backdrop-blur ring-1 ring-black/5 shadow-xl p-8 text-center">
           <p className="text-sm tracking-wide text-neutral-500 mb-3">
             Bienvenidos a
