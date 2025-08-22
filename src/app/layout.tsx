@@ -20,8 +20,13 @@ const pop = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "Wowkards",
-  description: "Tu sede digital",
+  title: "Mi Sede WOW!",
+  description: "Tu sede digital, la que más vende",
+  icons: {
+    icon: [
+      { url: "/icon.png", type: "image/png", sizes: "32x32" }, // generado desde app/icon.png
+    ],
+  },
 };
 
 export default function RootLayout({
