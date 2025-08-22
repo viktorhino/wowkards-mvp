@@ -23,10 +23,10 @@ type TemplateRegistry = typeof templateRegistry;
 type TemplateKey = keyof TemplateRegistry;
 
 // --- Helpers ---
-function isObject(v: unknown): v is Record<string, unknown> {
+function isObject(v: any): v is Record<string, any> {
   return v !== null && typeof v === "object";
 }
-function isPublicProfile(v: unknown): v is PublicProfile {
+function isPublicProfile(v: any): v is PublicProfile {
   return isObject(v) && typeof (v as any).slug === "string";
 }
 // Mapea layout -> clave del registry
@@ -56,11 +56,7 @@ export default async function Page({ params }: PageProps) {
 
     // Código inexistente
     if (!sc || scErr) {
-      return (
-        <main className="max-w-5xl mx-auto p-6">
-          No se encontró la WOWKard.
-        </main>
-      );
+      redirect("https://mi.sedewow.es/");
     }
 
     const isUnclaimed =
@@ -86,9 +82,9 @@ export default async function Page({ params }: PageProps) {
     }
 
     // Si no hay slug asociado, no podemos resolver destino
-    return (
-      <main className="max-w-5xl mx-auto p-6">No se encontró la WOWKard.</main>
-    );
+    //return (
+    redirect("https://mi.sedewow.es/");
+    //);
   }
 
   // 3) Tratar como SLUG de perfil (más de 4)
@@ -116,9 +112,7 @@ export default async function Page({ params }: PageProps) {
     : null;
 
   if (!profile) {
-    return (
-      <main className="max-w-5xl mx-auto p-6">No se encontró la WOWKard.</main>
-    );
+    redirect("https://mi.sedewow.es/");
   }
 
   // Renderizar TemplateLinkBio con el layout del perfil

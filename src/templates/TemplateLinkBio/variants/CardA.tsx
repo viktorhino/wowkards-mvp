@@ -428,7 +428,7 @@ export default function CardA({ profile }: { profile: PublicProfile }) {
           <div className="px-6 pb-6">
             <div className="border-t border-gray-200 pt-4 flex justify-center">
               <Link
-                href="/sede-wow"
+                href="https://mi.sedewow.es/"
                 className="inline-block bg-gray-200 text-gray-500 px-3 py-1 rounded-full text-[11px] md:text-xs font-normal"
               >
                 Crea tu sede W🤩W!

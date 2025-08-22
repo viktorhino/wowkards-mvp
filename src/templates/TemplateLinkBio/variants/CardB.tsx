@@ -104,9 +104,9 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
   const emailHref = profile.email ? `mailto:${profile.email}` : undefined;
 
   // Compartir (página intermedia; se mantiene igual)
-  const shareHref = `/share-contact?slug=${encodeURIComponent(
+  /*  const shareHref = `/share-contact?slug=${encodeURIComponent(
     profile.slug || ""
-  )}`;
+  )}`;*/
 
   // Extras (ig, fb, tiktok, x, direccion…)
   const extras: ExtraIn[] = Array.isArray(profile?.template_config?.extras)
@@ -361,7 +361,7 @@ export default function CardB({ profile }: { profile: PublicProfile }) {
           {/* Línea + badge final */}
           <div className="mt-8 border-t border-gray-300 pt-4 flex justify-center">
             <Link
-              href="/sede-wow"
+              href="https://mi.sedewow.es/"
               className="inline-block bg-gray-200 text-gray-800 px-3 py-1 rounded-full text-[12px] font-semibold"
             >
               Crea tu sede W🤩W!
